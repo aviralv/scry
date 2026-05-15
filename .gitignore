@@ -7,5 +7,7 @@ dist/
 .venv/
 *.egg-info/
 .DS_Store
-scry.config.yaml
-registry.yaml
+/scry.config.yaml
+/registry.yaml
+!tests/fixtures/scry.config.yaml
+!tests/fixtures/registry.yaml

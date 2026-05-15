@@ -1,0 +1,20 @@
+llm:
+  base_url: "http://localhost:6655/anthropic/"
+  auth_token: "${TEST_AUTH_TOKEN}"
+  model: "claude-haiku-latest"
+
+mcp_servers:
+  slack:
+    command: "slack-mcp"
+    env:
+      SLACK_BOT_TOKEN: "${TEST_SLACK_TOKEN}"
+  confluence-jira:
+    command: "confluence-jira-mcp"
+
+search_tools:
+  slack:
+    - tool: "slack_search"
+      params: { format: "json" }
+  confluence-jira:
+    - tool: "confluence_search"
+      params: { format: "json" }
