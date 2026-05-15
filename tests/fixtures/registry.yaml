@@ -1,0 +1,35 @@
+people:
+  marcus-karlbowski:
+    name: Marcus Karlbowski
+    role: Engineering Manager
+    teams: [Nova, LeanIX]
+    identifiers:
+      slack_username: marcus.karlbowski
+      email: marcus.karlbowski@sap.com
+    projects: [eca]
+
+  dimitri-natusch:
+    name: Dimitri Natusch
+    role: Engineer
+    teams: [Nova]
+    identifiers:
+      slack_username: dimitri.natusch
+      email: dimitri.natusch@sap.com
+    projects: [eca]
+
+projects:
+  eca:
+    name: Enterprise Content Agent
+    aliases: [UDA, Unstructured Data Agent]
+    routing:
+      slack_channels: [team-nova-internal]
+      confluence_cql: "space.key = NOVA AND label = eca"
+      jira_project: ECA
+    people: [marcus-karlbowski, dimitri-natusch]
+
+  dq-2.0:
+    name: Data Quality 2.0
+    routing:
+      slack_channels: [team-nova-internal, dq-eng]
+      confluence_cql: "space.key = NOVA AND label = dq"
+      jira_project: DQ
