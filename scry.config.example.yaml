@@ -1,0 +1,29 @@
+llm:
+  base_url: "http://localhost:6655/anthropic/"
+  auth_token: "${ANTHROPIC_AUTH_TOKEN}"
+  model: "claude-haiku-latest"
+
+mcp_servers:
+  slack:
+    command: "slack-mcp"
+    env:
+      SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}"
+  microsoft-365:
+    command: "microsoft-365-mcp"
+  confluence-jira:
+    command: "confluence-jira-mcp"
+    env:
+      ATLASSIAN_URL: "${ATLASSIAN_URL}"
+      ATLASSIAN_EMAIL: "${ATLASSIAN_EMAIL}"
+      ATLASSIAN_API_TOKEN: "${ATLASSIAN_API_TOKEN}"
+
+search_tools:
+  slack:
+    - tool: "slack_search"
+      params: { format: "json" }
+  microsoft-365:
+    - tool: "outlook_list_messages"
+      params: { format: "json" }
+  confluence-jira:
+    - tool: "confluence_search"
+      params: { format: "json" }

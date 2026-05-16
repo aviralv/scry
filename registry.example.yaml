@@ -1,0 +1,19 @@
+people:
+  jane-doe:
+    name: Jane Doe
+    role: Engineer
+    teams: [Platform]
+    identifiers:
+      slack_username: jane.doe
+      email: jane.doe@example.com
+    projects: [my-project]
+
+projects:
+  my-project:
+    name: My Project
+    aliases: [MP]
+    routing:
+      slack_channels: [team-platform]
+      confluence_cql: "space.key = PLAT AND label = my-project"
+      jira_project: MP
+    people: [jane-doe]
