@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { loadConfig } from './config/loader.js';
-import { loadRegistry } from './core/registry.js';
+import { getRegistry } from './core/registry.js';
 import { detectEntities } from './core/detector.js';
 import { buildSearchPlan } from './core/planner.js';
 import { McpPool } from './core/mcp-pool.js';
@@ -20,7 +20,6 @@ program
   .version('0.1.0')
   .argument('[query...]', 'Search query')
   .option('-c, --config <path>', 'Config file path', 'scry.config.yaml')
-  .option('-r, --registry <path>', 'Registry file path', 'registry.yaml')
   .option('--no-synthesize', 'Skip LLM synthesis, show raw results')
   .action(async (queryParts: string[], opts) => {
     const query = queryParts.join(' ');
@@ -30,7 +29,6 @@ program
     }
 
     const configPath = resolve(opts.config);
-    const registryPath = resolve(opts.registry);
 
     if (!existsSync(configPath)) {
       console.error(`Config not found: ${configPath}`);
@@ -39,7 +37,7 @@ program
     }
 
     const config = loadConfig(configPath);
-    const registry = existsSync(registryPath) ? loadRegistry(registryPath) : { people: {}, projects: {} };
+    const registry = getRegistry(config);
 
     const entities = detectEntities(query, registry);
     if (entities.projects.length > 0 || entities.people.length > 0) {
@@ -127,26 +125,6 @@ program
     console.log('Search tools:', Object.entries(config.search_tools).map(
       ([s, tools]) => `${s}: ${tools.map(t => t.tool).join(', ')}`
     ).join(' | '));
-  });
-
-program
-  .command('registry show')
-  .description('Print registry summary')
-  .action(() => {
-    const registryPath = resolve('registry.yaml');
-    if (!existsSync(registryPath)) {
-      console.error('No registry found.');
-      process.exit(1);
-    }
-    const registry = loadRegistry(registryPath);
-    console.log(`People (${Object.keys(registry.people).length}):`);
-    for (const [key, p] of Object.entries(registry.people)) {
-      console.log(`  ${p.name} — ${p.role ?? ''}`);
-    }
-    console.log(`\nProjects (${Object.keys(registry.projects).length}):`);
-    for (const [key, p] of Object.entries(registry.projects)) {
-      console.log(`  ${p.name} (${key}) — aliases: ${p.aliases?.join(', ') ?? 'none'}`);
-    }
   });
 
 program.parse();
