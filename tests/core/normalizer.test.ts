@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { normalizeSlackResults, normalizeConfluenceResults, normalizeEmailResults } from '../../src/core/normalizer.js';
 
 describe('normalizeSlackResults', () => {
-  it('extracts messages from slack_search JSON response', () => {
+  it('extracts messages from nested matches format', () => {
     const raw = JSON.stringify({
       messages: {
         matches: [
@@ -23,6 +23,26 @@ describe('normalizeSlackResults', () => {
     expect(results[0].snippet).toBe('We decided on per-document pricing');
     expect(results[0].author).toBe('marcus.karlbowski');
     expect(results[0].url).toBe('https://leanix.slack.com/archives/C123/p1714924800');
+  });
+
+  it('extracts messages from flat messages array (MCP server format)', () => {
+    const raw = '[BEGIN UNTRUSTED CONTENT FROM Slack]\n' + JSON.stringify({
+      messages: [
+        {
+          text: 'ECA rename is done',
+          user: 'muhammad.faisal',
+          ts: '1777032880.130489',
+          channel_name: 'team-nova-internal',
+          permalink: 'https://leanix.slack.com/archives/C06JC8DATN3/p1777032880130489',
+        },
+      ],
+    }) + '\n[END UNTRUSTED CONTENT FROM Slack]';
+
+    const results = normalizeSlackResults(raw);
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe('#team-nova-internal');
+    expect(results[0].author).toBe('muhammad.faisal');
+    expect(results[0].snippet).toBe('ECA rename is done');
   });
 
   it('returns empty array on invalid JSON', () => {
@@ -53,10 +73,20 @@ describe('normalizeConfluenceResults', () => {
     expect(results[0].title).toBe('ECA Pricing Strategy');
     expect(results[0].url).toContain('/spaces/NOVA/pages/12345');
   });
+
+  it('handles untrusted content wrapper', () => {
+    const raw = '[BEGIN UNTRUSTED CONTENT FROM Confluence search]\n' + JSON.stringify({
+      results: [{ content: { title: 'Test Page', _links: { webui: '/spaces/X/pages/1' } }, excerpt: 'test', lastModified: '2026-01-01', resultGlobalContainer: { title: 'X' } }],
+    }) + '\n[END UNTRUSTED CONTENT FROM Confluence search]';
+
+    const results = normalizeConfluenceResults(raw);
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe('Test Page');
+  });
 });
 
 describe('normalizeEmailResults', () => {
-  it('extracts messages from outlook_list_messages JSON response', () => {
+  it('extracts messages from { value: [...] } format', () => {
     const raw = JSON.stringify({
       value: [
         {
@@ -74,5 +104,21 @@ describe('normalizeEmailResults', () => {
     expect(results[0].source).toBe('email');
     expect(results[0].title).toBe('Re: ECA pricing follow-up');
     expect(results[0].author).toBe('Marcus Karlbowski');
+  });
+
+  it('extracts messages from flat array format (MCP server format)', () => {
+    const raw = '[BEGIN UNTRUSTED CONTENT FROM Microsoft 365]\n' + JSON.stringify([
+      {
+        subject: 'Re: DB - LeanIX',
+        bodyPreview: 'Hi René, Schön dass ihr dabei seid!',
+        from: { emailAddress: { name: 'Mewes, Gerrit', address: 'gerrit.mewes@sap.com' } },
+        receivedDateTime: '2026-04-30T10:32:07Z',
+      },
+    ]) + '\n[END UNTRUSTED CONTENT FROM Microsoft 365]';
+
+    const results = normalizeEmailResults(raw);
+    expect(results).toHaveLength(1);
+    expect(results[0].author).toBe('Mewes, Gerrit');
+    expect(results[0].title).toBe('Re: DB - LeanIX');
   });
 });
