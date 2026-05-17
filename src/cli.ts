@@ -31,11 +31,11 @@ program
       return;
     }
 
-    const configPath = resolve(opts.config);
+    const configPath = resolve(process.env.SCRY_CONFIG ?? opts.config);
 
     if (!existsSync(configPath)) {
       console.error(`Config not found: ${configPath}`);
-      console.error('Copy scry.config.example.yaml → scry.config.yaml and fill in values.');
+      console.error('Run `scry init` to create a config, or set SCRY_CONFIG env var.');
       process.exit(1);
     }
 
@@ -118,9 +118,9 @@ program
   .command('config show')
   .description('Print current config (redacted)')
   .action(() => {
-    const configPath = resolve('scry.config.yaml');
+    const configPath = resolve(process.env.SCRY_CONFIG ?? 'scry.config.yaml');
     if (!existsSync(configPath)) {
-      console.error('No config found.');
+      console.error('No config found. Run `scry init` to create one.');
       process.exit(1);
     }
     const config = loadConfig(configPath);
@@ -129,6 +129,21 @@ program
     console.log('Search tools:', Object.entries(config.search_tools).map(
       ([s, tools]) => `${s}: ${tools.map(t => t.tool).join(', ')}`
     ).join(' | '));
+    if (config.registry) {
+      const people = Object.keys(config.registry.people ?? {});
+      const projects = Object.keys(config.registry.projects ?? {});
+      if (people.length > 0) console.log('People:', people.join(', '));
+      if (projects.length > 0) console.log('Projects:', projects.join(', '));
+    }
+  });
+
+program
+  .command('init')
+  .description('Set up scry configuration interactively')
+  .option('-d, --dir <path>', 'Output directory', '.')
+  .action(async (opts) => {
+    const { runInit } = await import('./init/init.js');
+    await runInit(opts.dir);
   });
 
 function resolveNormalizer(server: string, tool: string, config: ScryConfig): NormalizerFn {
