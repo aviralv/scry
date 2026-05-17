@@ -2,6 +2,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { McpServerConfig } from '../config/types.js';
 
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Call timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 interface ServerConnection {
   name: string;
   client: Client;
@@ -42,7 +52,7 @@ export class McpPool {
     }
   }
 
-  async callTool(toolName: string, args: Record<string, unknown>): Promise<string> {
+  async callTool(toolName: string, args: Record<string, unknown>, timeoutMs: number = 15000): Promise<string> {
     const serverName = this.toolToServer.get(toolName);
     if (!serverName) {
       throw new Error(`Unknown tool: ${toolName}`);
@@ -53,7 +63,10 @@ export class McpPool {
       throw new Error(`Server ${serverName} not connected`);
     }
 
-    const result = await conn.client.callTool({ name: toolName, arguments: args });
+    const result = await withTimeout(
+      conn.client.callTool({ name: toolName, arguments: args }),
+      timeoutMs
+    );
     const texts: string[] = [];
     for (const block of result.content as Array<{ type: string; text?: string }>) {
       if (block.type === 'text' && block.text) {

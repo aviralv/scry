@@ -21,6 +21,7 @@ program
   .argument('[query...]', 'Search query')
   .option('-c, --config <path>', 'Config file path', 'scry.config.yaml')
   .option('--no-synthesize', 'Skip LLM synthesis, show raw results')
+  .option('-t, --timeout <ms>', 'Per-source timeout in ms', '15000')
   .action(async (queryParts: string[], opts) => {
     const query = queryParts.join(' ');
     if (!query) {
@@ -55,28 +56,34 @@ program
     try {
       await pool.connect(config.mcp_servers);
 
+      const timeoutMs = parseInt(opts.timeout ?? '15000', 10);
+
       const searchPromises = plan.map(async (action) => {
-        try {
-          const raw = await pool.callTool(action.tool, action.params);
-          return { server: action.server, tool: action.tool, raw };
-        } catch (err) {
-          console.error(`⟐ ${action.server}/${action.tool} failed: ${err}`);
-          return { server: action.server, tool: action.tool, raw: '' };
-        }
+        const raw = await pool.callTool(action.tool, action.params, timeoutMs);
+        return { server: action.server, tool: action.tool, raw };
       });
 
-      const rawResults = await Promise.all(searchPromises);
-
+      const settled = await Promise.allSettled(searchPromises);
       const allResults: SearchResult[] = [];
-      for (const { server, tool, raw } of rawResults) {
-        if (!raw) continue;
-        if (tool === 'slack_search') {
-          allResults.push(...normalizeSlackResults(raw));
-        } else if (tool === 'confluence_search') {
-          allResults.push(...normalizeConfluenceResults(raw));
-        } else if (tool === 'outlook_list_messages') {
-          allResults.push(...normalizeEmailResults(raw));
+      const failures: string[] = [];
+
+      for (const result of settled) {
+        if (result.status === 'fulfilled' && result.value.raw) {
+          const { tool, raw } = result.value;
+          if (tool === 'slack_search') {
+            allResults.push(...normalizeSlackResults(raw));
+          } else if (tool === 'confluence_search') {
+            allResults.push(...normalizeConfluenceResults(raw));
+          } else if (tool === 'outlook_list_messages') {
+            allResults.push(...normalizeEmailResults(raw));
+          }
+        } else if (result.status === 'rejected') {
+          failures.push(result.reason?.message ?? 'unknown error');
         }
+      }
+
+      if (failures.length > 0) {
+        console.error(`⟐ ${failures.length} source(s) failed: ${failures.join('; ')}`);
       }
 
       if (allResults.length === 0) {
