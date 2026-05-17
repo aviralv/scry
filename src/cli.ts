@@ -8,9 +8,11 @@ import { getRegistry } from './core/registry.js';
 import { detectEntities } from './core/detector.js';
 import { buildSearchPlan } from './core/planner.js';
 import { McpPool } from './core/mcp-pool.js';
-import { normalizeSlackResults, normalizeConfluenceResults, normalizeEmailResults } from './core/normalizer.js';
+import { normalizerRegistry, normalizeGeneric } from './core/normalizer.js';
+import type { NormalizerFn } from './core/normalizer.js';
+import { findBundledServer } from './config/bundled-servers.js';
 import { synthesize } from './core/synthesizer.js';
-import type { SearchResult } from './config/types.js';
+import type { ScryConfig, SearchResult } from './config/types.js';
 
 const program = new Command();
 
@@ -69,14 +71,9 @@ program
 
       for (const result of settled) {
         if (result.status === 'fulfilled' && result.value.raw) {
-          const { tool, raw } = result.value;
-          if (tool === 'slack_search') {
-            allResults.push(...normalizeSlackResults(raw));
-          } else if (tool === 'confluence_search') {
-            allResults.push(...normalizeConfluenceResults(raw));
-          } else if (tool === 'outlook_list_messages') {
-            allResults.push(...normalizeEmailResults(raw));
-          }
+          const { server, tool, raw } = result.value;
+          const normalize = resolveNormalizer(server, tool, config);
+          allResults.push(...normalize(raw, server));
         } else if (result.status === 'rejected') {
           failures.push(result.reason?.message ?? 'unknown error');
         }
@@ -133,5 +130,22 @@ program
       ([s, tools]) => `${s}: ${tools.map(t => t.tool).join(', ')}`
     ).join(' | '));
   });
+
+function resolveNormalizer(server: string, tool: string, config: ScryConfig): NormalizerFn {
+  const toolConfigs = config.search_tools[server] ?? [];
+  const toolConfig = toolConfigs.find(t => t.tool === tool);
+  if (toolConfig?.normalizer) {
+    return normalizerRegistry.get(toolConfig.normalizer) ?? normalizeGeneric;
+  }
+  const serverConfig = config.mcp_servers[server];
+  if (serverConfig) {
+    const bundled = findBundledServer(serverConfig.command);
+    const bundledTool = bundled?.searchTools.find(t => t.tool === tool);
+    if (bundledTool?.normalizer) {
+      return normalizerRegistry.get(bundledTool.normalizer) ?? normalizeGeneric;
+    }
+  }
+  return normalizeGeneric;
+}
 
 program.parse();
