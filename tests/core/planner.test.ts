@@ -21,6 +21,7 @@ const config: ScryConfig = {
     'confluence-jira': [{ tool: 'confluence_search', params: { format: 'json' } }],
     'microsoft-365': [{ tool: 'outlook_list_messages', params: { format: 'json' } }],
   },
+  registry,
 };
 
 describe('buildSearchPlan', () => {
@@ -60,5 +61,19 @@ describe('buildSearchPlan', () => {
     const plan = buildSearchPlan('random topic', entities, config);
     const slackAction = plan.find(a => a.server === 'slack');
     expect(slackAction?.params.query).toBe('random topic');
+  });
+
+  it('handles config with arbitrary server names and generic tool', () => {
+    const customConfig: ScryConfig = {
+      ...config,
+      search_tools: {
+        'notion': [{ tool: 'notion_search', params: {} }],
+      },
+    };
+    const entities = detectEntities('find the doc', registry);
+    const plan = buildSearchPlan('find the doc', entities, customConfig);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].server).toBe('notion');
+    expect(plan[0].params).toHaveProperty('query');
   });
 });
