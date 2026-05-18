@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { parse } from 'yaml';
-import type { Registry, Person, Project } from '../config/types.js';
+import type { Registry, Person, Project, ScryConfig } from '../config/types.js';
 
 export function loadRegistry(path: string): Registry {
   const raw = readFileSync(path, 'utf-8');
@@ -9,6 +9,10 @@ export function loadRegistry(path: string): Registry {
     people: parsed.people ?? {},
     projects: parsed.projects ?? {},
   };
+}
+
+export function getRegistry(config: ScryConfig): Registry {
+  return config.registry ?? { people: {}, projects: {} };
 }
 
 export function findPerson(query: string, registry: Registry): Person | null {

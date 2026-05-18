@@ -4,13 +4,15 @@ import { Command } from 'commander';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { loadConfig } from './config/loader.js';
-import { loadRegistry } from './core/registry.js';
+import { getRegistry } from './core/registry.js';
 import { detectEntities } from './core/detector.js';
 import { buildSearchPlan } from './core/planner.js';
 import { McpPool } from './core/mcp-pool.js';
-import { normalizeSlackResults, normalizeConfluenceResults, normalizeEmailResults } from './core/normalizer.js';
+import { normalizerRegistry, normalizeGeneric } from './core/normalizer.js';
+import type { NormalizerFn } from './core/normalizer.js';
+import { findBundledServer } from './config/bundled-servers.js';
 import { synthesize } from './core/synthesizer.js';
-import type { SearchResult } from './config/types.js';
+import type { ScryConfig, SearchResult } from './config/types.js';
 
 const program = new Command();
 
@@ -20,8 +22,8 @@ program
   .version('0.1.0')
   .argument('[query...]', 'Search query')
   .option('-c, --config <path>', 'Config file path', 'scry.config.yaml')
-  .option('-r, --registry <path>', 'Registry file path', 'registry.yaml')
   .option('--no-synthesize', 'Skip LLM synthesis, show raw results')
+  .option('-t, --timeout <ms>', 'Per-source timeout in ms', '15000')
   .action(async (queryParts: string[], opts) => {
     const query = queryParts.join(' ');
     if (!query) {
@@ -29,17 +31,16 @@ program
       return;
     }
 
-    const configPath = resolve(opts.config);
-    const registryPath = resolve(opts.registry);
+    const configPath = resolve(process.env.SCRY_CONFIG ?? opts.config);
 
     if (!existsSync(configPath)) {
       console.error(`Config not found: ${configPath}`);
-      console.error('Copy scry.config.example.yaml → scry.config.yaml and fill in values.');
+      console.error('Run `scry init` to create a config, or set SCRY_CONFIG env var.');
       process.exit(1);
     }
 
     const config = loadConfig(configPath);
-    const registry = existsSync(registryPath) ? loadRegistry(registryPath) : { people: {}, projects: {} };
+    const registry = getRegistry(config);
 
     const entities = detectEntities(query, registry);
     if (entities.projects.length > 0 || entities.people.length > 0) {
@@ -57,28 +58,29 @@ program
     try {
       await pool.connect(config.mcp_servers);
 
+      const timeoutMs = parseInt(opts.timeout ?? '15000', 10);
+
       const searchPromises = plan.map(async (action) => {
-        try {
-          const raw = await pool.callTool(action.tool, action.params);
-          return { server: action.server, tool: action.tool, raw };
-        } catch (err) {
-          console.error(`⟐ ${action.server}/${action.tool} failed: ${err}`);
-          return { server: action.server, tool: action.tool, raw: '' };
-        }
+        const raw = await pool.callTool(action.tool, action.params, timeoutMs);
+        return { server: action.server, tool: action.tool, raw };
       });
 
-      const rawResults = await Promise.all(searchPromises);
-
+      const settled = await Promise.allSettled(searchPromises);
       const allResults: SearchResult[] = [];
-      for (const { server, tool, raw } of rawResults) {
-        if (!raw) continue;
-        if (tool === 'slack_search') {
-          allResults.push(...normalizeSlackResults(raw));
-        } else if (tool === 'confluence_search') {
-          allResults.push(...normalizeConfluenceResults(raw));
-        } else if (tool === 'outlook_list_messages') {
-          allResults.push(...normalizeEmailResults(raw));
+      const failures: string[] = [];
+
+      for (const result of settled) {
+        if (result.status === 'fulfilled' && result.value.raw) {
+          const { server, tool, raw } = result.value;
+          const normalize = resolveNormalizer(server, tool, config);
+          allResults.push(...normalize(raw, server));
+        } else if (result.status === 'rejected') {
+          failures.push(result.reason?.message ?? 'unknown error');
         }
+      }
+
+      if (failures.length > 0) {
+        console.error(`⟐ ${failures.length} source(s) failed: ${failures.join('; ')}`);
       }
 
       if (allResults.length === 0) {
@@ -116,9 +118,9 @@ program
   .command('config show')
   .description('Print current config (redacted)')
   .action(() => {
-    const configPath = resolve('scry.config.yaml');
+    const configPath = resolve(process.env.SCRY_CONFIG ?? 'scry.config.yaml');
     if (!existsSync(configPath)) {
-      console.error('No config found.');
+      console.error('No config found. Run `scry init` to create one.');
       process.exit(1);
     }
     const config = loadConfig(configPath);
@@ -127,26 +129,38 @@ program
     console.log('Search tools:', Object.entries(config.search_tools).map(
       ([s, tools]) => `${s}: ${tools.map(t => t.tool).join(', ')}`
     ).join(' | '));
+    if (config.registry) {
+      const people = Object.keys(config.registry.people ?? {});
+      const projects = Object.keys(config.registry.projects ?? {});
+      if (people.length > 0) console.log('People:', people.join(', '));
+      if (projects.length > 0) console.log('Projects:', projects.join(', '));
+    }
   });
 
 program
-  .command('registry show')
-  .description('Print registry summary')
-  .action(() => {
-    const registryPath = resolve('registry.yaml');
-    if (!existsSync(registryPath)) {
-      console.error('No registry found.');
-      process.exit(1);
-    }
-    const registry = loadRegistry(registryPath);
-    console.log(`People (${Object.keys(registry.people).length}):`);
-    for (const [key, p] of Object.entries(registry.people)) {
-      console.log(`  ${p.name} — ${p.role ?? ''}`);
-    }
-    console.log(`\nProjects (${Object.keys(registry.projects).length}):`);
-    for (const [key, p] of Object.entries(registry.projects)) {
-      console.log(`  ${p.name} (${key}) — aliases: ${p.aliases?.join(', ') ?? 'none'}`);
-    }
+  .command('init')
+  .description('Set up scry configuration interactively')
+  .option('-d, --dir <path>', 'Output directory', '.')
+  .action(async (opts) => {
+    const { runInit } = await import('./init/init.js');
+    await runInit(opts.dir);
   });
+
+function resolveNormalizer(server: string, tool: string, config: ScryConfig): NormalizerFn {
+  const toolConfigs = config.search_tools[server] ?? [];
+  const toolConfig = toolConfigs.find(t => t.tool === tool);
+  if (toolConfig?.normalizer) {
+    return normalizerRegistry.get(toolConfig.normalizer) ?? normalizeGeneric;
+  }
+  const serverConfig = config.mcp_servers[server];
+  if (serverConfig) {
+    const bundled = findBundledServer(serverConfig.command);
+    const bundledTool = bundled?.searchTools.find(t => t.tool === tool);
+    if (bundledTool?.normalizer) {
+      return normalizerRegistry.get(bundledTool.normalizer) ?? normalizeGeneric;
+    }
+  }
+  return normalizeGeneric;
+}
 
 program.parse();

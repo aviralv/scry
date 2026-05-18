@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeSlackResults, normalizeConfluenceResults, normalizeEmailResults } from '../../src/core/normalizer.js';
+import { normalizeSlackResults, normalizeConfluenceResults, normalizeEmailResults, normalizerRegistry, normalizeGeneric } from '../../src/core/normalizer.js';
 
 describe('normalizeSlackResults', () => {
   it('extracts messages from nested matches format', () => {
@@ -120,5 +120,46 @@ describe('normalizeEmailResults', () => {
     expect(results).toHaveLength(1);
     expect(results[0].author).toBe('Mewes, Gerrit');
     expect(results[0].title).toBe('Re: DB - LeanIX');
+  });
+});
+
+describe('normalizerRegistry', () => {
+  it('contains slack, confluence, email keys', () => {
+    expect(normalizerRegistry.get('slack')).toBeDefined();
+    expect(normalizerRegistry.get('confluence')).toBeDefined();
+    expect(normalizerRegistry.get('email')).toBeDefined();
+  });
+});
+
+describe('normalizeGeneric', () => {
+  it('extracts items from array response with low confidence', () => {
+    const raw = JSON.stringify([
+      { title: 'Item 1', text: 'Some content', url: 'https://example.com/1' },
+    ]);
+    const results = normalizeGeneric(raw, 'custom-source');
+    expect(results).toHaveLength(1);
+    expect(results[0].source).toBe('custom-source');
+    expect(results[0].title).toBe('Item 1');
+    expect(results[0].snippet).toBe('Some content');
+    expect(results[0].confidence).toBe('low');
+  });
+
+  it('extracts items from { results: [...] } wrapper', () => {
+    const raw = JSON.stringify({ results: [{ title: 'Page', summary: 'A page' }] });
+    const results = normalizeGeneric(raw, 'wiki');
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe('Page');
+  });
+
+  it('handles untrusted content wrapper', () => {
+    const raw = '[BEGIN UNTRUSTED CONTENT FROM Custom]\n' +
+      JSON.stringify([{ title: 'Test' }]) +
+      '\n[END UNTRUSTED CONTENT FROM Custom]';
+    const results = normalizeGeneric(raw, 'custom');
+    expect(results).toHaveLength(1);
+  });
+
+  it('returns empty for completely unparseable content', () => {
+    expect(normalizeGeneric('not json at all', 'x')).toEqual([]);
   });
 });

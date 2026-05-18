@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { parse } from 'yaml';
+import { resolve } from 'path';
 import type { ScryConfig } from './types.js';
 
 export function resolveEnvVars(value: string): string {
@@ -25,8 +26,9 @@ function resolveDeep(obj: unknown): unknown {
   return obj;
 }
 
-export function loadConfig(path: string): ScryConfig {
-  const raw = readFileSync(path, 'utf-8');
+export function loadConfig(path?: string): ScryConfig {
+  const configPath = path ?? process.env.SCRY_CONFIG ?? resolve('scry.config.yaml');
+  const raw = readFileSync(configPath, 'utf-8');
   const parsed = parse(raw);
   return resolveDeep(parsed) as ScryConfig;
 }

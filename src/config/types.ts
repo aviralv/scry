@@ -13,12 +13,14 @@ export interface McpServerConfig {
 export interface SearchToolConfig {
   tool: string;
   params?: Record<string, unknown>;
+  normalizer?: string;
 }
 
 export interface ScryConfig {
   llm: LlmConfig;
   mcp_servers: Record<string, McpServerConfig>;
   search_tools: Record<string, SearchToolConfig[]>;
+  registry?: Registry;
 }
 
 export interface PersonIdentifiers {
@@ -54,13 +56,14 @@ export interface Registry {
 }
 
 export interface SearchResult {
-  source: 'slack' | 'confluence' | 'jira' | 'email' | 'teams';
+  source: string;
   title: string;
   snippet: string;
   author: string | null;
   timestamp: string;
   url: string | null;
   metadata: Record<string, string>;
+  confidence?: 'high' | 'low';
 }
 
 export interface SearchAction {
@@ -81,4 +84,13 @@ export interface Citation {
 export interface SynthesisResult {
   answer: string;
   citations: Citation[];
+}
+
+export interface BundledServer {
+  name: string;
+  command: string;
+  githubUrl: string;
+  description: string;
+  searchTools: SearchToolConfig[];
+  envVars?: string[];
 }
