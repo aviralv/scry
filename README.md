@@ -1,50 +1,101 @@
 # scry
 
-Personal federated search orchestrator over MCP. Routes natural language queries to search APIs in parallel, synthesizes results with source attribution.
+Federated search orchestrator over MCP. Query Slack, Confluence, email, and more from a single CLI — get synthesized answers with source attribution.
 
-## What This Does
+## Quick Start
 
-`scry` is a CLI tool that answers "where did we discuss X?" across all your fragmented tools — without re-indexing their content. It:
-
-1. Takes a natural language query
-2. Consults a context registry (people, projects, source mappings) for intelligent routing
-3. Fans out parallel search calls to MCP servers (Slack, Confluence, email, Jira, etc.)
-4. Synthesizes results across sources with attribution
-
-## Why This Exists
-
-Small teams fragment knowledge across 5-10 tools. Glean solves this for enterprises (500+ seats, expensive, months of setup). Nothing exists at personal/small-team scale.
-
-MCP standardizes the connector layer — the ecosystem builds connectors to every SaaS tool. What's missing is the intelligence layer: knowing which sources to query, how to decompose the question, and how to synthesize across results.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│  Query Layer (natural language)          │
-├─────────────────────────────────────────┤
-│  Orchestrator: decompose → route →      │
-│  parallel search → synthesize → cite    │
-├─────────────────────────────────────────┤
-│  Context Registry (people, projects,    │
-│  channels, spaces — routing table)      │
-├─────────────────────────────────────────┤
-│  MCP search tools (native APIs)         │
-├─────────────────────────────────────────┤
-│  Slack  │ M365  │ Atlassian │ GitHub │...│
-└─────────────────────────────────────────┘
+```bash
+npm install -g scry
+scry init
+scry "what did we decide about pricing?"
 ```
 
-**Key design decisions:**
-- Search orchestration, not a search engine — uses each tool's native search API
-- Context registry is a YAML file of people/projects/source mappings (not a vector store)
-- Local-first, no cloud dependency
-- User's own OAuth tokens via MCP servers
+## How It Works
 
-## First Milestone
+```
+query → discover sources → parallel search → normalize → synthesize → cited answer
+```
 
-Query across Slack + Confluence + email, get a synthesized answer with source attribution — faster than manually searching each tool individually.
+1. **Discover**: Detects MCP servers from your Claude config or PATH
+2. **Route**: Uses a context registry (people, projects, channels) to target the right sources
+3. **Search**: Fans out parallel queries with per-source timeouts
+4. **Synthesize**: LLM combines results with source citations
 
-## Status
+## Supported MCP Servers
 
-Early development. Stack TBD.
+| Name | Command | Install |
+|------|---------|---------|
+| Slack | `slack-mcp` | `uv tool install git+https://github.com/aviralv/slack-mcp` |
+| Microsoft 365 | `ms365-intent-mcp` | `uv tool install git+https://github.com/aviralv/ms365-intent-mcp` |
+| Confluence & Jira | `confluence-jira-mcp` | `uv tool install git+https://github.com/aviralv/confluence-jira-mcp` |
+
+Any MCP server with search tools works — these three are bundled with optimized normalizers.
+
+## Configuration
+
+`scry init` generates a `scry.config.yaml`:
+
+```yaml
+llm:
+  base_url: "https://api.anthropic.com"
+  auth_token: "${ANTHROPIC_API_KEY}"
+  model: "claude-haiku-4-5-20251001"
+
+mcp_servers:
+  slack:
+    command: "slack-mcp"
+  ms365:
+    command: "ms365-intent-mcp"
+
+search_tools:
+  slack:
+    - tool: "slack_search"
+      params: { format: "json" }
+      normalizer: "slack"
+  ms365:
+    - tool: "outlook_list_messages"
+      params: { format: "json" }
+      normalizer: "email"
+
+registry:  # optional — enables context-aware routing
+  projects:
+    my-project:
+      name: My Project
+      routing:
+        slack_channels: [team-channel]
+        jira_project: PROJ
+```
+
+## CLI Options
+
+```
+scry [query]              Search and synthesize
+scry init                 Interactive setup wizard
+scry config show          Show current configuration
+
+Options:
+  -c, --config <path>     Config file (default: scry.config.yaml)
+  -t, --timeout <ms>      Per-source timeout (default: 15000)
+  --no-synthesize         Show raw results without LLM synthesis
+```
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `SCRY_CONFIG` | Custom config file path |
+| `ANTHROPIC_API_KEY` | LLM API key (used via `${...}` in config) |
+
+## How Normalizers Work
+
+Each MCP server returns different JSON shapes. Scry uses **normalizers** to convert them into a common format:
+
+- **Built-in**: `slack`, `confluence`, `email` — optimized for known response shapes
+- **Generic fallback**: Best-effort extraction for unknown servers (results marked low-confidence)
+- **Config-driven**: Set `normalizer: "slack"` in `search_tools` to assign a normalizer to any tool
+
+## Requirements
+
+- Node.js >= 20
+- At least one MCP server installed and authenticated
+- An Anthropic API key (for synthesis)

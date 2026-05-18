@@ -1,17 +1,36 @@
 {
   "name": "scry",
   "version": "0.1.0",
-  "description": "Personal federated search orchestrator over MCP",
+  "description": "Federated search orchestrator over MCP",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
-    "scry": "./dist/cli.js"
+    "scry": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "search",
+    "federation",
+    "cli",
+    "slack",
+    "confluence",
+    "email"
+  ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@inquirer/prompts": "^8.4.3",
