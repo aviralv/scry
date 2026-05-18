@@ -1,6 +1,6 @@
 {
   "name": "scry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Federated search orchestrator over MCP",
   "type": "module",
   "main": "./dist/index.js",
