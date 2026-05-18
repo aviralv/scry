@@ -1,5 +1,8 @@
 {
-  "name": "scry",
+  "name": "@aviralv/scry",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.1.1",
   "description": "Federated search orchestrator over MCP",
   "type": "module",
