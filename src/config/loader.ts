@@ -1,7 +1,8 @@
 import { readFileSync } from 'fs';
 import { parse } from 'yaml';
-import { resolve } from 'path';
+import { resolve, dirname, join } from 'path';
 import type { ScryConfig } from './types.js';
+import { loadDotEnvFile } from './dotenv.js';
 
 export function resolveEnvVars(value: string): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, varName) => {
@@ -28,7 +29,9 @@ function resolveDeep(obj: unknown): unknown {
 
 export function loadConfig(path?: string): ScryConfig {
   const configPath = path ?? process.env.SCRY_CONFIG ?? resolve('scry.config.yaml');
+  loadDotEnvFile(join(dirname(configPath), '.scry.env'));
   const raw = readFileSync(configPath, 'utf-8');
   const parsed = parse(raw);
   return resolveDeep(parsed) as ScryConfig;
 }
+

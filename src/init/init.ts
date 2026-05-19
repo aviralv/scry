@@ -1,4 +1,4 @@
-import { writeFileSync, existsSync } from 'fs';
+import { writeFileSync, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { stringify } from 'yaml';
 import { checkbox, input, confirm } from '@inquirer/prompts';
@@ -21,6 +21,45 @@ interface ProjectDef {
   slackChannels?: string[];
   confluenceCql?: string;
   jiraProject?: string;
+}
+
+export function extractEnvSecrets(
+  servers: DiscoveredServer[]
+): { sanitized: DiscoveredServer[]; envVars: Record<string, string> } {
+  const envVars: Record<string, string> = {};
+  const sanitized = servers.map(server => {
+    const newEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(server.env)) {
+      if (typeof value !== 'string') continue;
+      const isPlaceholder = /^\$\{[^}]+\}$/.test(value);
+      if (isPlaceholder || value === '') {
+        newEnv[key] = value;
+      } else {
+        envVars[key] = value;
+        newEnv[key] = `\${${key}}`;
+      }
+    }
+    return { ...server, env: newEnv };
+  });
+  return { sanitized, envVars };
+}
+
+export function formatDotEnv(envVars: Record<string, string>): string {
+  return Object.entries(envVars)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n') + '\n';
+}
+
+export function ensureGitignored(gitignorePath: string, entry: string): void {
+  if (existsSync(gitignorePath)) {
+    const current = readFileSync(gitignorePath, 'utf-8');
+    const lines = current.split('\n').map(l => l.trim());
+    if (lines.includes(entry)) return;
+    const sep = current.endsWith('\n') ? '' : '\n';
+    writeFileSync(gitignorePath, current + sep + entry + '\n', 'utf-8');
+  } else {
+    writeFileSync(gitignorePath, entry + '\n', 'utf-8');
+  }
 }
 
 export function generateConfig(
@@ -175,13 +214,25 @@ export async function runInit(outputDir: string = '.'): Promise<void> {
   }
 
   // Generate and write config
+  const { sanitized, envVars } = extractEnvSecrets(selectedServers);
   const config = generateConfig(
-    selectedServers,
+    sanitized,
     { model, base_url, auth_token: '${ANTHROPIC_API_KEY}' },
     projects.length > 0 ? projects : undefined
   );
 
   writeFileSync(configPath, stringify(config), 'utf-8');
   console.log(`\n✓ Config written to ${configPath}`);
+
+  if (Object.keys(envVars).length > 0) {
+    const envPath = resolve(outputDir, '.scry.env');
+    writeFileSync(envPath, formatDotEnv(envVars), 'utf-8');
+    console.log(`✓ Secrets written to ${envPath}`);
+
+    const gitignorePath = resolve(outputDir, '.gitignore');
+    ensureGitignored(gitignorePath, '.scry.env');
+    console.log(`✓ .scry.env added to ${gitignorePath}`);
+  }
+
   console.log('  Run `scry "your query"` to search.');
 }
