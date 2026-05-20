@@ -37,8 +37,11 @@ export function resolveConfigPath(explicit?: string): string {
   const cwdPath = resolve('scry.config.yaml');
   if (existsSync(cwdPath)) return cwdPath;
 
-  const xdgConfigHome = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
-  return join(xdgConfigHome, 'scry', 'scry.config.yaml');
+  // Treat empty string the same as unset — `??` only catches null/undefined.
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim()
+    ? process.env.XDG_CONFIG_HOME
+    : join(homedir(), '.config');
+  return resolve(xdgConfigHome, 'scry', 'scry.config.yaml');
 }
 
 export function loadConfig(path?: string): ScryConfig {
@@ -54,11 +57,11 @@ export function loadConfig(path?: string): ScryConfig {
 
 1. **Drop the commander default for `-c, --config`** (currently `'scry.config.yaml'`). With the default present, `opts.config` is always truthy and short-circuits the XDG fallback. Change `option('-c, --config <path>', 'Config file path', 'scry.config.yaml')` → `option('-c, --config <path>', 'Config file path')`. Update help text to note the resolution chain.
 2. **Replace inline resolution at both call sites** (`cli.ts:34` and `cli.ts:121`) with `const configPath = resolveConfigPath(opts.config)`. The `config show` command currently has no `-c` flag — add one for consistency, since both other entry points accept it.
-3. **Expand the "not found" error** to list the paths that were checked, so users know where to put the file:
+3. **Expand the "not found" error** so users know where to put the file. `resolveConfigPath` returns a single path (the resolved one), so the error wording describes the chain rather than enumerating each attempted path:
    ```
-   Config not found. Looked in:
-     - <explicit / SCRY_CONFIG / CWD path that was tried>
-     - ~/.config/scry/scry.config.yaml
+   Config not found at <resolved-path>.
+   Scry looks for: -c <path>, then $SCRY_CONFIG, then ./scry.config.yaml,
+   then ~/.config/scry/scry.config.yaml.
    Run `scry init` to create one, or copy your existing config to ~/.config/scry/.
    ```
 
@@ -71,7 +74,8 @@ New `describe('resolveConfigPath')` block. Use `vi.spyOn(process, 'cwd')` for CW
 3. CWD `scry.config.yaml` beats XDG when both exist
 4. Falls through to `~/.config/scry/scry.config.yaml` when no path arg, no env var, no CWD config
 5. Honors `XDG_CONFIG_HOME` when set
-6. `.scry.env` next to the resolved config loads (one test via the XDG path branch — existing `dotenv.test.ts` already covers the loading mechanism)
+6. Treats `XDG_CONFIG_HOME=""` (empty string) the same as unset — falls back to `homedir()/.config`
+7. `.scry.env` next to the resolved config loads (one test via the XDG path branch — existing `dotenv.test.ts` already covers the loading mechanism)
 
 Existing tests in `loadConfig` unchanged.
 
@@ -80,7 +84,7 @@ Existing tests in `loadConfig` unchanged.
 - `scry "test query"` works from any directory after `npm i -g @aviralv/scry` + `mkdir -p ~/.config/scry && cp scry.config.yaml ~/.config/scry/`.
 - Running from inside `Playground/scry/` continues to work unchanged.
 - `scry config show` accepts `-c, --config`.
-- "Config not found" error lists the paths checked.
+- "Config not found" error describes the resolution chain.
 - README has a "Configuration" section documenting the resolution chain.
 - New tests pass; existing tests unchanged.
 - Version bumped 0.1.2 → 0.1.3 (additive, no breaking changes).
