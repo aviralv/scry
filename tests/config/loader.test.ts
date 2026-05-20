@@ -3,7 +3,7 @@ import { loadConfig, resolveEnvVars, resolveConfigPath } from '../../src/config/
 import { resolve, join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import * as os from 'os';
 
@@ -86,6 +86,34 @@ describe('loadConfig', () => {
 
   it('throws on missing config file', () => {
     expect(() => loadConfig('/nonexistent/path.yaml')).toThrow();
+  });
+
+  it('loads .scry.env co-located with the resolved config (XDG branch)', () => {
+    const xdgRoot = mkdtempSync(join(tmpdir(), 'scry-xdg-env-'));
+    const scryDir = join(xdgRoot, 'scry');
+    mkdirSync(scryDir);
+
+    // Copy fixture config into the XDG location
+    const fixtureContent = readFileSync(resolve(__dirname, '../fixtures/scry.config.yaml'), 'utf-8');
+    writeFileSync(join(scryDir, 'scry.config.yaml'), fixtureContent);
+    writeFileSync(join(scryDir, '.scry.env'), 'TEST_AUTH_TOKEN=from-dotenv-file');
+
+    // Make resolution land on the XDG path: clear precedence sources
+    delete process.env.SCRY_CONFIG;
+    delete process.env.TEST_AUTH_TOKEN;
+    process.env.XDG_CONFIG_HOME = xdgRoot;
+
+    const tmpCwd = mkdtempSync(join(tmpdir(), 'scry-cwd-empty-'));
+    vi.spyOn(process, 'cwd').mockReturnValue(tmpCwd);
+
+    try {
+      const config = loadConfig();
+      expect(config.llm.auth_token).toBe('from-dotenv-file');
+    } finally {
+      vi.restoreAllMocks();
+      rmSync(xdgRoot, { recursive: true, force: true });
+      rmSync(tmpCwd, { recursive: true, force: true });
+    }
   });
 });
 
