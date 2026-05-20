@@ -1,8 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { loadConfig, resolveEnvVars } from '../../src/config/loader.js';
-import { resolve } from 'path';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { loadConfig, resolveEnvVars, resolveConfigPath } from '../../src/config/loader.js';
+import { resolve, join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import * as os from 'os';
+
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return {
+    ...actual,
+    homedir: vi.fn(actual.homedir),
+  };
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -75,5 +86,61 @@ describe('loadConfig', () => {
 
   it('throws on missing config file', () => {
     expect(() => loadConfig('/nonexistent/path.yaml')).toThrow();
+  });
+});
+
+describe('resolveConfigPath', () => {
+  let tmpHome: string;
+  let tmpCwd: string;
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), 'scry-home-'));
+    tmpCwd = mkdtempSync(join(tmpdir(), 'scry-cwd-'));
+    delete process.env.SCRY_CONFIG;
+    delete process.env.XDG_CONFIG_HOME;
+    vi.mocked(os.homedir).mockReturnValue(tmpHome);
+    vi.spyOn(process, 'cwd').mockReturnValue(tmpCwd);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(tmpHome, { recursive: true, force: true });
+    rmSync(tmpCwd, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it('returns explicit path when provided, beating env/CWD/XDG', () => {
+    process.env.SCRY_CONFIG = '/from/env.yaml';
+    writeFileSync(join(tmpCwd, 'scry.config.yaml'), '');
+    expect(resolveConfigPath('/explicit/path.yaml')).toBe('/explicit/path.yaml');
+  });
+
+  it('uses SCRY_CONFIG when no explicit arg, beating CWD/XDG', () => {
+    process.env.SCRY_CONFIG = '/from/env.yaml';
+    writeFileSync(join(tmpCwd, 'scry.config.yaml'), '');
+    expect(resolveConfigPath()).toBe('/from/env.yaml');
+  });
+
+  it('uses CWD scry.config.yaml when it exists, beating XDG', () => {
+    const cwdConfig = join(tmpCwd, 'scry.config.yaml');
+    writeFileSync(cwdConfig, '');
+    expect(resolveConfigPath()).toBe(cwdConfig);
+  });
+
+  it('falls through to ~/.config/scry/scry.config.yaml when nothing else hits', () => {
+    expect(resolveConfigPath()).toBe(join(tmpHome, '.config', 'scry', 'scry.config.yaml'));
+  });
+
+  it('honors XDG_CONFIG_HOME when set', () => {
+    const customXdg = mkdtempSync(join(tmpdir(), 'scry-xdg-'));
+    process.env.XDG_CONFIG_HOME = customXdg;
+    expect(resolveConfigPath()).toBe(join(customXdg, 'scry', 'scry.config.yaml'));
+    rmSync(customXdg, { recursive: true, force: true });
+  });
+
+  it('treats XDG_CONFIG_HOME="" the same as unset', () => {
+    process.env.XDG_CONFIG_HOME = '';
+    expect(resolveConfigPath()).toBe(join(tmpHome, '.config', 'scry', 'scry.config.yaml'));
   });
 });
