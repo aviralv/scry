@@ -1,6 +1,7 @@
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
 import { resolve, dirname, join } from 'path';
+import { homedir } from 'os';
 import type { ScryConfig } from './types.js';
 import { loadDotEnvFile } from './dotenv.js';
 
@@ -27,11 +28,23 @@ function resolveDeep(obj: unknown): unknown {
   return obj;
 }
 
+export function resolveConfigPath(explicit?: string): string {
+  if (explicit) return resolve(explicit);
+  if (process.env.SCRY_CONFIG) return resolve(process.env.SCRY_CONFIG);
+
+  const cwdPath = resolve('scry.config.yaml');
+  if (existsSync(cwdPath)) return cwdPath;
+
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim()
+    ? process.env.XDG_CONFIG_HOME
+    : join(homedir(), '.config');
+  return resolve(xdgConfigHome, 'scry', 'scry.config.yaml');
+}
+
 export function loadConfig(path?: string): ScryConfig {
-  const configPath = path ?? process.env.SCRY_CONFIG ?? resolve('scry.config.yaml');
+  const configPath = resolveConfigPath(path);
   loadDotEnvFile(join(dirname(configPath), '.scry.env'));
   const raw = readFileSync(configPath, 'utf-8');
   const parsed = parse(raw);
   return resolveDeep(parsed) as ScryConfig;
 }
-

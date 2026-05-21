@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { resolve } from 'path';
 import { existsSync } from 'fs';
-import { loadConfig } from './config/loader.js';
+import { loadConfig, resolveConfigPath } from './config/loader.js';
 import { getRegistry } from './core/registry.js';
 import { detectEntities } from './core/detector.js';
 import { buildSearchPlan } from './core/planner.js';
@@ -19,9 +18,9 @@ const program = new Command();
 program
   .name('scry')
   .description('Federated search orchestrator over MCP')
-  .version('0.1.0')
+  .version('0.1.3')
   .argument('[query...]', 'Search query')
-  .option('-c, --config <path>', 'Config file path', 'scry.config.yaml')
+  .option('-c, --config <path>', 'Config file path (default: ./scry.config.yaml or ~/.config/scry/scry.config.yaml)')
   .option('--no-synthesize', 'Skip LLM synthesis, show raw results')
   .option('-t, --timeout <ms>', 'Per-source timeout in ms', '15000')
   .action(async (queryParts: string[], opts) => {
@@ -31,11 +30,13 @@ program
       return;
     }
 
-    const configPath = resolve(process.env.SCRY_CONFIG ?? opts.config);
+    const configPath = resolveConfigPath(opts.config);
 
     if (!existsSync(configPath)) {
-      console.error(`Config not found: ${configPath}`);
-      console.error('Run `scry init` to create a config, or set SCRY_CONFIG env var.');
+      console.error(`Config not found at ${configPath}.`);
+      console.error('Scry looks for: -c <path>, then $SCRY_CONFIG, then ./scry.config.yaml,');
+      console.error('then ~/.config/scry/scry.config.yaml.');
+      console.error('Run `scry init` to create one, or copy your existing config to ~/.config/scry/.');
       process.exit(1);
     }
 
@@ -117,10 +118,14 @@ program
 program
   .command('config show')
   .description('Print current config (redacted)')
-  .action(() => {
-    const configPath = resolve(process.env.SCRY_CONFIG ?? 'scry.config.yaml');
+  .option('-c, --config <path>', 'Config file path')
+  .action((opts) => {
+    const configPath = resolveConfigPath(opts.config);
     if (!existsSync(configPath)) {
-      console.error('No config found. Run `scry init` to create one.');
+      console.error(`Config not found at ${configPath}.`);
+      console.error('Scry looks for: -c <path>, then $SCRY_CONFIG, then ./scry.config.yaml,');
+      console.error('then ~/.config/scry/scry.config.yaml.');
+      console.error('Run `scry init` to create one, or copy your existing config to ~/.config/scry/.');
       process.exit(1);
     }
     const config = loadConfig(configPath);

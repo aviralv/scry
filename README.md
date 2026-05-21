@@ -33,6 +33,23 @@ Any MCP server with search tools works — these three are bundled with optimize
 
 ## Configuration
 
+### Where scry looks for config
+
+Scry resolves the config path in this order, taking the first hit:
+
+1. `-c <path>` flag passed on the command line
+2. `SCRY_CONFIG` environment variable
+3. `./scry.config.yaml` in the current working directory
+4. `$XDG_CONFIG_HOME/scry/scry.config.yaml` (defaults to `~/.config/scry/scry.config.yaml`)
+
+For a global install (`npm i -g @aviralv/scry`), the recommended setup is:
+
+```bash
+scry init -d ~/.config/scry
+```
+
+This puts the config at the XDG location so `scry "<query>"` works from any directory. A `.scry.env` file placed alongside the config (e.g. `~/.config/scry/.scry.env`) is loaded automatically and supplies secrets without exposing them in `scry.config.yaml`.
+
 `scry init` generates a `scry.config.yaml`:
 
 ```yaml
@@ -74,7 +91,7 @@ scry init                 Interactive setup wizard
 scry config show          Show current configuration
 
 Options:
-  -c, --config <path>     Config file (default: scry.config.yaml)
+  -c, --config <path>     Config file (default: see resolution chain in Configuration above)
   -t, --timeout <ms>      Per-source timeout (default: 15000)
   --no-synthesize         Show raw results without LLM synthesis
 ```
