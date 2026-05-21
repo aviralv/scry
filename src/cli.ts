@@ -18,7 +18,7 @@ const program = new Command();
 program
   .name('scry')
   .description('Federated search orchestrator over MCP')
-  .version('0.1.0')
+  .version('0.1.3')
   .argument('[query...]', 'Search query')
   .option('-c, --config <path>', 'Config file path (default: ./scry.config.yaml or ~/.config/scry/scry.config.yaml)')
   .option('--no-synthesize', 'Skip LLM synthesis, show raw results')

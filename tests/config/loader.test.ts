@@ -7,6 +7,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import * as os from 'os';
 
+// vi.spyOn(os, 'homedir') doesn't work under ESM — named imports are bound at
+// module load and can't be reassigned. Factory mock is required to swap homedir.
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
   return {
@@ -111,6 +113,7 @@ describe('loadConfig', () => {
       expect(config.llm.auth_token).toBe('from-dotenv-file');
     } finally {
       vi.restoreAllMocks();
+      delete process.env.XDG_CONFIG_HOME;
       rmSync(xdgRoot, { recursive: true, force: true });
       rmSync(tmpCwd, { recursive: true, force: true });
     }
