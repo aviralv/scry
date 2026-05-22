@@ -1,18 +1,28 @@
-# scry web frontend — Plan A: Foundation
-
-> **⚠ SUPERSEDED by [2026-05-22-scry-web-foundation-v2.md](./2026-05-22-scry-web-foundation-v2.md).** Engine pivoted to `@anthropic-ai/claude-agent-sdk` after this plan was written; the AbortSignal-through-engine task no longer applies. v2 picks up from the current branch state (W1, W2, W4 already merged on `feat/web-foundation`). Kept for history.
+# scry web frontend v2 — Plan A: Foundation
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Lay the server + frontend foundation so subsequent plans (search, MCP, settings, onboarding) can land vertical slices on top of working infrastructure. By the end of Plan A: an empty React SPA loads from a Hono server with CSRF + Origin hardening, the engine accepts `AbortSignal`, and atomic config writes are available as a shared utility.
+**Goal:** Land the server + frontend scaffolding so subsequent plans (engine pivot, search, library, MCP/registry/onboarding/preferences) can drop verticals onto a stable foundation. By the end of Plan A: `scry serve` boots a hardened Hono server (Origin allowlist + per-boot CSRF + tight CSP), the React+Vite SPA loads in a browser, and the existing CLI continues to work unchanged.
 
-**Architecture:** Hono server in `src/server/` runs in-process with the existing TS engine. Shared types in `src/shared/`. React + Vite + Tailwind in `web/` with its own `package.json` so dev deps don't bloat the runtime. CLI gains a `scry serve` subcommand that boots the server and opens a browser.
+**Architecture:** Single-process Node binary. Hono server in `src/server/` serves API stubs + static frontend from `dist/web/`. React + Vite + Tailwind in `web/` (own `package.json` so dev deps don't bloat runtime). New `scry serve` subcommand alongside existing `scry "<query>"` and `scry config show`. No engine changes in this plan — that's Plan B.
 
-**Tech Stack:** Hono + `@hono/node-server`, zod (schema validation), Vite + React + TypeScript + Tailwind, `open` (browser launch), existing scry engine.
+**Tech Stack:** Hono + `@hono/node-server`, Vite + React + TypeScript + Tailwind, `open` (browser launch). Built on dependencies already installed in the prior session (W4 commit on `feat/web-foundation`).
 
-**Spec reference:** `docs/superpowers/specs/2026-05-21-scry-web-frontend-design.md` — read the Architecture, Security, and Repo layout sections before starting.
+**Spec reference:** [`docs/superpowers/specs/2026-05-22-scry-web-frontend-v2-design.md`](../specs/2026-05-22-scry-web-frontend-v2-design.md) — Architecture, Security, Repo layout sections.
 
-**Out of scope for Plan A** (covered by later plans): search route + UI, MCP manager, settings, onboarding wizard, E2E tests, packaging hardening.
+**Branch state at start of plan:**
+- Branch: `feat/web-foundation`
+- Already committed: W1 `src/shared/types.ts` (cross-cutting types), W2 `src/config/atomic-write.ts` + tests (atomic config write), W4 dependency installs (`hono`, `@hono/node-server`, `zod`, `open` runtime; `@types/node` dev). Test count: 103/103.
+- The reverted W3 task (AbortSignal threading through old engine) is no longer relevant — engine is going away in Plan B.
+
+**Out of scope for Plan A:**
+- Engine module (`src/engine/*`) — Plan B
+- Storage (`src/storage/*`) — Plan B
+- Search route + UI — Plan C
+- Library sidebar — Plan D
+- MCP/Registry/Onboarding/Preferences — Plans E–G
+- E2E Playwright + npm publish prep — Plan H
+- CLI restructure into `src/cli/index.ts` + subcommand files — Plan B (when engine pivot rewires the CLI anyway)
 
 ---
 
@@ -20,386 +30,37 @@
 
 | Path | Purpose |
 |---|---|
-| `src/shared/types.ts` | Types referenced by both server and web (CsrfBootstrap, ApiError, future SearchEvent etc.) |
-| `src/server/index.ts` | `createServer(config)` returning a Hono app |
-| `src/server/boot.ts` | `startServer(port, config)` — listens via `@hono/node-server`, returns the Node `http.Server` for tests |
+| `src/server/index.ts` | `createServer(opts)` returning a Hono app |
+| `src/server/boot.ts` | `startServer(opts)` — listens via `@hono/node-server` |
 | `src/server/middleware/origin.ts` | Origin allowlist middleware |
 | `src/server/middleware/csrf.ts` | Per-boot token check on mutating routes |
-| `src/server/middleware/csrf-token.ts` | Generates token at boot, exposes via `getCsrfToken()` |
+| `src/server/middleware/csrf-token.ts` | Generates/serves the boot token |
 | `src/server/routes/health.ts` | `GET /api/health` (sanity check) |
-| `src/server/routes/csrf.ts` | `GET /api/csrf` returns the token (alternative to the meta-tag injection path) |
-| `src/server/static.ts` | Serve `dist/web/*`; rewrite `index.html` to inject CSRF token into a `<meta>` tag |
-| `src/config/atomic-write.ts` | `atomicWriteConfig(path, content)` — tmp + fsync + rename + .bak |
-| `src/core/abort.ts` | Tiny helper: `raceAbort(promise, signal)` for engine internals that don't natively support `AbortSignal` |
-| `web/package.json` | Local deps: react, react-dom, vite, tailwindcss, typescript, @types/* |
-| `web/vite.config.ts` | Build to `../dist/web`, dev proxy `/api/*` → `:6678` |
-| `web/tsconfig.json` | Path alias `@shared/*` → `../src/shared/*` |
+| `src/server/routes/csrf.ts` | `GET /api/csrf` returns the boot token |
+| `src/server/static.ts` | Serve `dist/web/*`; rewrite `index.html` to inject CSRF token |
+| `src/cli.ts` | Modify — add `scry serve` subcommand |
+| `web/package.json` | Local deps for the frontend build only |
+| `web/vite.config.ts` | Vite config; build output to `../dist/web` |
+| `web/tsconfig.json` | TypeScript config with `@shared/*` path alias |
+| `web/tsconfig.node.json` | Node-flavored TS config for vite.config.ts |
 | `web/index.html` | Bootstrap shell with `<meta name="scry-csrf" content="__SCRY_CSRF__">` placeholder |
+| `web/postcss.config.js` | Tailwind + autoprefixer pipeline |
+| `web/tailwind.config.ts` | Maps theme tokens to utility classes |
 | `web/src/main.tsx` | React entry |
-| `web/src/App.tsx` | Empty router shell |
+| `web/src/App.tsx` | Empty router shell (no real routes yet) |
+| `web/src/index.css` | Imports tokens.css + tailwind layers |
 | `web/src/theme/tokens.css` | ~25 CSS variables (rebrand surface) |
-| `web/src/theme/tailwind.config.ts` | Maps tokens to utility classes |
-| `web/src/lib/csrf.ts` | Reads `<meta name="scry-csrf">`, attaches `X-Scry-Csrf` header |
-| `web/src/lib/api.ts` | `apiFetch(path, init)` — wraps fetch with CSRF + JSON error handling |
-| `web/src/lib/sse.ts` | Typed SSE consumer (used in Plan B) |
+| `web/src/lib/csrf.ts` | Reads `<meta name="scry-csrf">` or fetches `/api/csrf` |
+| `web/src/lib/api.ts` | `apiFetch` / `apiJson` wrappers with CSRF + JSON |
+| `web/src/lib/stream.ts` | Fetch-streaming consumer for `text/event-stream`-shaped bodies |
 | `tests/server/health.test.ts` | Server boot + health route |
 | `tests/server/middleware/origin.test.ts` | Origin allowlist |
 | `tests/server/middleware/csrf.test.ts` | CSRF require/reject |
-| `tests/config/atomic-write.test.ts` | Atomic write happy path + crash mid-write |
-| `tests/core/abort.test.ts` | `raceAbort` + AbortSignal threading |
-| `package.json` | Add `hono`, `@hono/node-server`, `zod`, `open` runtime deps |
+| `package.json` | Modify — `build:server` / `build:web` scripts + `files` allowlist |
 
 ---
 
-### Task 1: Create branch and scaffold `src/shared/types.ts`
-
-**Files:**
-- Create: `src/shared/types.ts`
-
-- [ ] **Step 1: Create the feature branch**
-
-```bash
-git checkout main
-git pull --ff-only
-git checkout -b feat/web-foundation
-git status
-```
-
-Expected: `On branch feat/web-foundation`. Pre-existing uncommitted changes (`.gitignore`, `CLAUDE.md`, `session-notes/`) are unrelated and stay untouched throughout this plan. Never stage them.
-
-- [ ] **Step 2: Create `src/shared/types.ts`**
-
-```typescript
-// src/shared/types.ts
-// Types referenced by both the Hono server and the React web app.
-// Plan A populates this with the CSRF + error shapes; later plans will add SearchEvent, McpStatus, etc.
-
-export interface CsrfBootstrap {
-  token: string;
-}
-
-export interface ApiError {
-  error: string;
-  message?: string;
-  details?: unknown;
-}
-
-export type ApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: ApiError };
-```
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/shared/types.ts
-git commit -m "feat(shared): scaffold cross-cutting types"
-```
-
----
-
-### Task 2: Atomic config write helper
-
-**Files:**
-- Create: `src/config/atomic-write.ts`
-- Create: `tests/config/atomic-write.test.ts`
-
-- [ ] **Step 1: Write the failing tests**
-
-```typescript
-// tests/config/atomic-write.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { atomicWriteConfig } from '../../src/config/atomic-write.js';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-
-describe('atomicWriteConfig', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'scry-atomic-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('writes new file atomically when no existing file', async () => {
-    const target = join(dir, 'scry.config.yaml');
-    await atomicWriteConfig(target, 'hello: world\n');
-    expect(readFileSync(target, 'utf-8')).toBe('hello: world\n');
-    expect(existsSync(`${target}.bak`)).toBe(false);
-    expect(existsSync(`${target}.tmp`)).toBe(false);
-  });
-
-  it('backs up existing file before overwriting', async () => {
-    const target = join(dir, 'scry.config.yaml');
-    writeFileSync(target, 'old: content\n');
-    await atomicWriteConfig(target, 'new: content\n');
-    expect(readFileSync(target, 'utf-8')).toBe('new: content\n');
-    expect(readFileSync(`${target}.bak`, 'utf-8')).toBe('old: content\n');
-    expect(existsSync(`${target}.tmp`)).toBe(false);
-  });
-
-  it('overwrites prior .bak on subsequent writes', async () => {
-    const target = join(dir, 'scry.config.yaml');
-    writeFileSync(target, 'v1\n');
-    await atomicWriteConfig(target, 'v2\n');
-    await atomicWriteConfig(target, 'v3\n');
-    expect(readFileSync(target, 'utf-8')).toBe('v3\n');
-    expect(readFileSync(`${target}.bak`, 'utf-8')).toBe('v2\n');
-  });
-
-  it('leaves the live file intact if the write fails before rename', async () => {
-    const target = join(dir, 'scry.config.yaml');
-    writeFileSync(target, 'original\n');
-    // Path that can't be written: a directory
-    const badTarget = join(dir, 'a-dir');
-    const fs = await import('fs/promises');
-    await fs.mkdir(badTarget);
-    await expect(atomicWriteConfig(badTarget, 'x')).rejects.toThrow();
-    // Original target untouched
-    expect(readFileSync(target, 'utf-8')).toBe('original\n');
-  });
-});
-```
-
-- [ ] **Step 2: Run to verify failure**
-
-```bash
-npm test -- tests/config/atomic-write.test.ts
-```
-
-Expected: 4 failing tests with "atomicWriteConfig is not a function" or import error.
-
-- [ ] **Step 3: Implement**
-
-```typescript
-// src/config/atomic-write.ts
-import { promises as fs } from 'fs';
-
-/**
- * Atomic write with backup. Sequence:
- *   1. If the target exists, copy it to <path>.bak (overwriting any prior .bak).
- *   2. Write content to <path>.tmp, fsync, close.
- *   3. Rename <path>.tmp → <path> (atomic on POSIX).
- * On any failure before the rename, the live file is untouched.
- */
-export async function atomicWriteConfig(path: string, content: string): Promise<void> {
-  const tmp = `${path}.tmp`;
-  const bak = `${path}.bak`;
-
-  // Verify target's parent is a directory we can write to (catches the
-  // "target IS a directory" case before we touch any files).
-  const stat = await fs.stat(path).catch(() => null);
-  if (stat && stat.isDirectory()) {
-    throw new Error(`Cannot write config: ${path} is a directory`);
-  }
-
-  if (stat) {
-    await fs.copyFile(path, bak);
-  }
-
-  const fh = await fs.open(tmp, 'w');
-  try {
-    await fh.writeFile(content);
-    await fh.sync();
-  } finally {
-    await fh.close();
-  }
-
-  await fs.rename(tmp, path);
-}
-```
-
-- [ ] **Step 4: Run tests to verify pass**
-
-```bash
-npm test -- tests/config/atomic-write.test.ts
-```
-
-Expected: 4 passing tests.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/config/atomic-write.ts tests/config/atomic-write.test.ts
-git commit -m "feat(config): add atomicWriteConfig with .bak + tmp+fsync+rename"
-```
-
----
-
-### Task 3: AbortSignal threading helper + engine plumbing
-
-**Files:**
-- Create: `src/core/abort.ts`
-- Create: `tests/core/abort.test.ts`
-- Modify: `src/core/mcp-pool.ts` (add optional `signal` to `callTool`)
-- Modify: `src/core/synthesizer.ts` (accept optional `signal`, pass to fetch)
-
-- [ ] **Step 1: Write tests for `raceAbort`**
-
-```typescript
-// tests/core/abort.test.ts
-import { describe, it, expect } from 'vitest';
-import { raceAbort } from '../../src/core/abort.js';
-
-describe('raceAbort', () => {
-  it('resolves when the inner promise resolves first', async () => {
-    const signal = new AbortController().signal;
-    const result = await raceAbort(Promise.resolve(42), signal);
-    expect(result).toBe(42);
-  });
-
-  it('rejects with AbortError when signal aborts first', async () => {
-    const ctl = new AbortController();
-    const slow = new Promise((resolve) => setTimeout(() => resolve('late'), 1000));
-    setTimeout(() => ctl.abort(), 10);
-    await expect(raceAbort(slow, ctl.signal)).rejects.toThrow(/aborted/i);
-  });
-
-  it('rejects immediately if signal already aborted', async () => {
-    const ctl = new AbortController();
-    ctl.abort();
-    await expect(raceAbort(Promise.resolve(1), ctl.signal)).rejects.toThrow(/aborted/i);
-  });
-});
-```
-
-- [ ] **Step 2: Run to verify failure**
-
-```bash
-npm test -- tests/core/abort.test.ts
-```
-
-Expected: 3 failing tests, import error.
-
-- [ ] **Step 3: Implement `raceAbort`**
-
-```typescript
-// src/core/abort.ts
-export class AbortError extends Error {
-  constructor(message = 'Operation aborted') {
-    super(message);
-    this.name = 'AbortError';
-  }
-}
-
-export function raceAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(new AbortError());
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(new AbortError());
-    signal.addEventListener('abort', onAbort, { once: true });
-    promise.then(
-      (val) => { signal.removeEventListener('abort', onAbort); resolve(val); },
-      (err) => { signal.removeEventListener('abort', onAbort); reject(err); }
-    );
-  });
-}
-```
-
-- [ ] **Step 4: Run tests to verify**
-
-```bash
-npm test -- tests/core/abort.test.ts
-```
-
-Expected: 3 passing.
-
-- [ ] **Step 5: Thread `signal` through `McpPool.callTool`**
-
-In `src/core/mcp-pool.ts`, find `callTool` and add an optional `signal` parameter. The MCP SDK's `client.callTool({...})` accepts a second arg with `signal`. Update the signature and pass it through.
-
-```typescript
-// In src/core/mcp-pool.ts, replace the existing callTool method with:
-async callTool(
-  toolName: string,
-  args: Record<string, unknown>,
-  timeoutMs: number = 15000,
-  signal?: AbortSignal,
-): Promise<unknown> {
-  const serverName = this.toolToServer.get(toolName);
-  if (!serverName) throw new Error(`Unknown tool: ${toolName}`);
-  const conn = this.connections.get(serverName);
-  if (!conn) throw new Error(`No connection for ${serverName}`);
-
-  const callPromise = conn.client.callTool({ name: toolName, arguments: args }, undefined, { signal });
-  return raceAbort(withTimeout(callPromise, timeoutMs), signal);
-}
-```
-
-Add the import at the top: `import { raceAbort } from './abort.js';`
-
-- [ ] **Step 6: Thread `signal` through `synthesize`**
-
-In `src/core/synthesizer.ts`, find the function `synthesize` and add an optional `signal` parameter. The synthesizer makes a `fetch()` to the LLM endpoint — pass `signal` to fetch's init.
-
-Read `src/core/synthesizer.ts` first to confirm the exact signature, then update:
-
-```typescript
-// signature change:
-export async function synthesize(
-  query: string,
-  results: SearchResult[],
-  llm: LlmConfig,
-  signal?: AbortSignal,
-): Promise<SynthesisResult> {
-  // ... existing body, find the fetch call and add `signal` to its init:
-  // const response = await fetch(url, { method: 'POST', headers, body, signal });
-}
-```
-
-- [ ] **Step 7: Run the full test suite**
-
-```bash
-npm run build && npm test
-```
-
-Expected: build clean, all tests pass (existing engine tests still green; abort tests new and passing).
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add src/core/abort.ts src/core/mcp-pool.ts src/core/synthesizer.ts tests/core/abort.test.ts
-git commit -m "feat(core): thread AbortSignal through McpPool.callTool and synthesize"
-```
-
----
-
-### Task 4: Add server runtime dependencies
-
-**Files:**
-- Modify: `package.json`
-
-- [ ] **Step 1: Install Hono + node-server + zod + open**
-
-```bash
-npm install hono @hono/node-server zod open
-npm install --save-dev @types/node
-```
-
-- [ ] **Step 2: Confirm `package.json` dependencies block looks correct**
-
-Read `package.json`. Verify the `dependencies` section now contains `hono`, `@hono/node-server`, `zod`, `open` alongside whatever existed before. `@types/node` should be in `devDependencies`.
-
-- [ ] **Step 3: Build to confirm no breakage**
-
-```bash
-npm run build && npm test
-```
-
-Expected: build clean, 99/99 (or whatever the current count is) passing.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add package.json package-lock.json
-git commit -m "chore: add hono, @hono/node-server, zod, open"
-```
-
----
-
-### Task 5: Origin allowlist middleware + tests
+### Task 1: Origin allowlist middleware
 
 **Files:**
 - Create: `src/server/middleware/origin.ts`
@@ -422,40 +83,34 @@ function makeApp(port = 6678) {
 
 describe('originAllowlist', () => {
   it('accepts requests with no Origin (curl, server-side)', async () => {
-    const app = makeApp();
-    const res = await app.request('/ok', { method: 'GET' });
+    const res = await makeApp().request('/ok', { method: 'GET' });
     expect(res.status).toBe(200);
   });
 
   it('accepts http://localhost:6678', async () => {
-    const app = makeApp();
-    const res = await app.request('/ok', { headers: { Origin: 'http://localhost:6678' } });
+    const res = await makeApp().request('/ok', { headers: { Origin: 'http://localhost:6678' } });
     expect(res.status).toBe(200);
   });
 
   it('accepts http://127.0.0.1:6678', async () => {
-    const app = makeApp();
-    const res = await app.request('/ok', { headers: { Origin: 'http://127.0.0.1:6678' } });
+    const res = await makeApp().request('/ok', { headers: { Origin: 'http://127.0.0.1:6678' } });
     expect(res.status).toBe(200);
   });
 
   it('rejects http://evil.example.com', async () => {
-    const app = makeApp();
-    const res = await app.request('/ok', { headers: { Origin: 'http://evil.example.com' } });
+    const res = await makeApp().request('/ok', { headers: { Origin: 'http://evil.example.com' } });
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toBe('origin-rejected');
   });
 
   it('rejects https://localhost:6678 (wrong scheme)', async () => {
-    const app = makeApp();
-    const res = await app.request('/ok', { headers: { Origin: 'https://localhost:6678' } });
+    const res = await makeApp().request('/ok', { headers: { Origin: 'https://localhost:6678' } });
     expect(res.status).toBe(403);
   });
 
   it('rejects http://localhost:9999 (wrong port)', async () => {
-    const app = makeApp();
-    const res = await app.request('/ok', { headers: { Origin: 'http://localhost:9999' } });
+    const res = await makeApp().request('/ok', { headers: { Origin: 'http://localhost:9999' } });
     expect(res.status).toBe(403);
   });
 });
@@ -508,14 +163,14 @@ git commit -m "feat(server): origin allowlist middleware"
 
 ---
 
-### Task 6: CSRF token + middleware
+### Task 2: CSRF token + middleware
 
 **Files:**
 - Create: `src/server/middleware/csrf-token.ts`
 - Create: `src/server/middleware/csrf.ts`
 - Create: `tests/server/middleware/csrf.test.ts`
 
-- [ ] **Step 1: Write tests**
+- [ ] **Step 1: Write the failing tests**
 
 ```typescript
 // tests/server/middleware/csrf.test.ts
@@ -590,7 +245,7 @@ describe('csrf', () => {
 npm test -- tests/server/middleware/csrf.test.ts
 ```
 
-Expected: 6 failing tests (import error).
+Expected: 6 failing tests.
 
 - [ ] **Step 3: Implement token store**
 
@@ -610,7 +265,6 @@ export function getCsrfToken(): string {
   return token;
 }
 
-// Test-only: clear the token between tests so generateCsrfToken can re-init.
 export function resetCsrfTokenForTests(): void {
   token = null;
 }
@@ -657,7 +311,7 @@ git commit -m "feat(server): per-boot CSRF token + middleware"
 
 ---
 
-### Task 7: Hono server scaffold + health route + boot
+### Task 3: Server scaffold + health/csrf routes + boot
 
 **Files:**
 - Create: `src/server/index.ts`
@@ -666,7 +320,7 @@ git commit -m "feat(server): per-boot CSRF token + middleware"
 - Create: `src/server/routes/csrf.ts`
 - Create: `tests/server/health.test.ts`
 
-- [ ] **Step 1: Write tests for server scaffold**
+- [ ] **Step 1: Write tests**
 
 ```typescript
 // tests/server/health.test.ts
@@ -710,7 +364,7 @@ describe('server scaffold', () => {
 npm test -- tests/server/health.test.ts
 ```
 
-Expected: failures, import error.
+Expected: failures (import error).
 
 - [ ] **Step 3: Implement health and csrf routes**
 
@@ -781,31 +435,23 @@ export function startServer(opts: BootOptions) {
 npm run build && npm test -- tests/server/
 ```
 
-Expected: all server tests pass.
+Expected: TypeScript clean; all server tests pass.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add src/server/index.ts src/server/boot.ts src/server/routes/health.ts src/server/routes/csrf.ts tests/server/health.test.ts
-git commit -m "feat(server): Hono scaffold with health + csrf routes, origin + csrf middleware wired"
+git commit -m "feat(server): Hono scaffold with health + csrf routes; origin + csrf middleware wired"
 ```
 
 ---
 
-### Task 8: Vite + React + Tailwind scaffold in `web/`
+### Task 4: Vite + React + Tailwind scaffold in `web/`
 
 **Files:**
-- Create: `web/package.json`
-- Create: `web/vite.config.ts`
-- Create: `web/tsconfig.json`
-- Create: `web/tsconfig.node.json` (for vite.config)
-- Create: `web/index.html`
-- Create: `web/src/main.tsx`
-- Create: `web/src/App.tsx`
-- Create: `web/src/theme/tokens.css`
-- Create: `web/src/theme/tailwind.config.ts`
-- Create: `web/src/index.css`
-- Create: `web/postcss.config.js`
+- Create: `web/package.json`, `web/vite.config.ts`, `web/tsconfig.json`, `web/tsconfig.node.json`
+- Create: `web/index.html`, `web/postcss.config.js`, `web/tailwind.config.ts`
+- Create: `web/src/main.tsx`, `web/src/App.tsx`, `web/src/index.css`, `web/src/theme/tokens.css`
 
 - [ ] **Step 1: Create `web/package.json`**
 
@@ -843,7 +489,7 @@ git commit -m "feat(server): Hono scaffold with health + csrf routes, origin + c
 cd web && npm install && cd ..
 ```
 
-Expected: clean install, no errors. Add `web/node_modules/` to `.gitignore` if not already covered (the existing `.gitignore` has `node_modules` which globs all subdirs).
+Expected: clean install. The repo's existing `.gitignore` already covers `node_modules` recursively.
 
 - [ ] **Step 3: Create `web/vite.config.ts`**
 
@@ -940,43 +586,33 @@ export default defineConfig({
 </html>
 ```
 
-(The `__SCRY_CSRF__` placeholder is replaced by the static-file handler at request time. For Vite dev, the React app reads it via `/api/csrf` instead — see Task 9 lib.)
-
-- [ ] **Step 7: Create theme tokens**
+- [ ] **Step 7: Create `web/src/theme/tokens.css`**
 
 ```css
-/* web/src/theme/tokens.css */
 :root {
-  /* Backgrounds */
   --scry-bg-primary: #0c0e10;
   --scry-bg-secondary: #14171a;
   --scry-bg-sidebar: #0a0c0e;
   --scry-bg-elevated: #1c2024;
 
-  /* Text */
   --scry-text-primary: #ecefe8;
   --scry-text-secondary: #b4bcb6;
   --scry-text-tertiary: #6e7770;
 
-  /* Accent (scry's identity — cool teal, distinct from lynx amber) */
   --scry-accent: #3aa39c;
   --scry-accent-dim: #2a7a76;
   --scry-accent-glow: rgba(58, 163, 156, 0.18);
 
-  /* Status */
   --scry-error: #d96363;
   --scry-warning: #d9a03a;
   --scry-success: #5ab07e;
 
-  /* Borders + dividers */
   --scry-border: #232629;
   --scry-divider: #1a1d20;
 
-  /* Typography */
   --scry-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --scry-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  /* Sizes */
   --scry-radius-sm: 4px;
   --scry-radius-md: 8px;
   --scry-radius-lg: 12px;
@@ -995,10 +631,9 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 8: Create Tailwind config**
+- [ ] **Step 8: Create `web/tailwind.config.ts`** (at the top of `web/`, NOT under `src/theme/`)
 
 ```typescript
-// web/src/theme/tailwind.config.ts
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
@@ -1043,16 +678,6 @@ const config: Config = {
 
 export default config;
 ```
-
-Note: Tailwind looks for `tailwind.config.{ts,js}` at the directory root by default. Move/rename this to `web/tailwind.config.ts` (top of `web/`, not under `src/theme/`). The `src/theme/` directory is for tokens.css only. Update the file path:
-
-Actually, just put it at `web/tailwind.config.ts`. Update the file map and create it there:
-
-```bash
-mv web/src/theme/tailwind.config.ts web/tailwind.config.ts
-```
-
-(If you have not yet created the file in the wrong location, just create it directly at `web/tailwind.config.ts`.)
 
 - [ ] **Step 9: Create PostCSS config and root CSS**
 
@@ -1119,24 +744,17 @@ cd web && npm run build && cd ..
 ls -la dist/web/
 ```
 
-Expected: `dist/web/` exists with `index.html`, `assets/*.js`, `assets/*.css`.
+Expected: `dist/web/index.html`, `dist/web/assets/*.js`, `dist/web/assets/*.css`.
 
-- [ ] **Step 12: Commit**
-
-```bash
-git add web/ dist/web/
-git commit -m "feat(web): Vite + React + Tailwind scaffold with theme tokens"
-```
-
-(Note: `dist/web/` is committed for now to keep the foundation reproducible. Later plans may add it to `.gitignore` and rely on `npm run build`. For Plan A, having the build output committed simplifies the next task's static-serving wire-up.)
-
-Actually — don't commit `dist/web/`. Add it to `.gitignore` instead. The pre-existing `.gitignore` already has `dist/` per the existing project structure. Verify:
+- [ ] **Step 12: Confirm `dist/` is gitignored**
 
 ```bash
-grep -E "^dist" .gitignore || echo "NOT_GITIGNORED"
+grep -E "^dist" .gitignore || echo "MISSING_DIST_IGNORE"
 ```
 
-If `dist/` is gitignored, only `git add web/` is needed. The build output stays local and CI/install will re-run the build via the `prepublishOnly` hook.
+Expected: at least `dist` or `dist/` appears. If `MISSING_DIST_IGNORE` prints, STOP and report — adding to `.gitignore` would touch a pre-existing-uncommitted file that isn't ours.
+
+- [ ] **Step 13: Commit (only `web/`, not the build output)**
 
 ```bash
 git add web/
@@ -1145,12 +763,12 @@ git commit -m "feat(web): Vite + React + Tailwind scaffold with theme tokens"
 
 ---
 
-### Task 9: Frontend `lib/csrf.ts`, `lib/api.ts`, `lib/sse.ts`
+### Task 5: Frontend client libs (csrf, api, stream)
 
 **Files:**
 - Create: `web/src/lib/csrf.ts`
 - Create: `web/src/lib/api.ts`
-- Create: `web/src/lib/sse.ts`
+- Create: `web/src/lib/stream.ts`
 
 - [ ] **Step 1: Implement `lib/csrf.ts`**
 
@@ -1228,25 +846,26 @@ export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<
 }
 ```
 
-- [ ] **Step 3: Implement `lib/sse.ts`**
+- [ ] **Step 3: Implement `lib/stream.ts`** (fetch-streaming consumer for `text/event-stream`-shaped bodies)
 
 ```typescript
-// web/src/lib/sse.ts
-// Minimal SSE consumer — used by Plan B's search route.
-// Parses `event:`/`data:` blocks separated by blank lines.
+// web/src/lib/stream.ts
+// Consumes a text/event-stream response from a fetch() call.
+// (NOT EventSource — that doesn't support custom headers like X-Scry-Csrf.)
+// Used by Plan C's search route.
 
-export interface SseHandler<T> {
+export interface StreamHandler<T> {
   onEvent: (event: T) => void;
   onError?: (err: Error) => void;
   onDone?: () => void;
 }
 
-export async function consumeSse<T>(
+export async function consumeStream<T>(
   res: Response,
-  handler: SseHandler<T>,
+  handler: StreamHandler<T>,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (!res.body) throw new Error('No response body for SSE');
+  if (!res.body) throw new Error('No response body for stream');
   if (!res.headers.get('Content-Type')?.startsWith('text/event-stream')) {
     throw new Error('Response is not text/event-stream');
   }
@@ -1302,12 +921,12 @@ Expected: clean build.
 
 ```bash
 git add web/src/lib/
-git commit -m "feat(web): csrf, api, sse client libs"
+git commit -m "feat(web): csrf, api, fetch-streaming client libs"
 ```
 
 ---
 
-### Task 10: Static file handler (with CSRF token injection) + `scry serve` CLI subcommand
+### Task 6: Static handler with CSRF injection + `scry serve` subcommand
 
 **Files:**
 - Create: `src/server/static.ts`
@@ -1344,9 +963,7 @@ export function staticHandler(rootDir: string): MiddlewareHandler {
     if (c.req.method !== 'GET') return next();
 
     const urlPath = c.req.path === '/' ? '/index.html' : c.req.path;
-    // SPA fallback: anything that doesn't have an extension and isn't /api/* gets index.html
-    const isApi = urlPath.startsWith('/api/');
-    if (isApi) return next();
+    if (urlPath.startsWith('/api/')) return next();
 
     const hasExt = /\.[a-z0-9]+$/i.test(urlPath);
     const target = hasExt ? urlPath : '/index.html';
@@ -1382,11 +999,10 @@ export function staticHandler(rootDir: string): MiddlewareHandler {
 }
 ```
 
-- [ ] **Step 2: Mount static handler in server**
-
-Update `src/server/index.ts`:
+- [ ] **Step 2: Update `src/server/index.ts` to mount static**
 
 ```typescript
+// src/server/index.ts
 import { Hono } from 'hono';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -1399,7 +1015,7 @@ import { staticHandler } from './static.js';
 
 export interface ServerOptions {
   port: number;
-  staticDir?: string;  // path to dist/web (resolved relative to dist/server at runtime)
+  staticDir?: string;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1414,7 +1030,7 @@ export function createServer(opts: ServerOptions) {
   app.route('/api/health', healthRoute);
   app.route('/api/csrf', csrfRoute);
 
-  // Default staticDir: ../web (when running from dist/server). Caller can override.
+  // Default staticDir: ../web (relative to dist/server at runtime).
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
   app.use('*', staticHandler(staticDir));
 
@@ -1422,18 +1038,15 @@ export function createServer(opts: ServerOptions) {
 }
 ```
 
-- [ ] **Step 3: Add `scry serve` to cli.ts**
+- [ ] **Step 3: Add `scry serve` to `src/cli.ts`**
 
-In `src/cli.ts`, after the existing `program.command('init')` definition and before `program.parse()`, add:
+Read `src/cli.ts` first to confirm structure (existing commands `query` (default action), `config show`, `init`). Add `import open from 'open';` to the imports. Then, after the `program.command('init')` definition and before `program.parse()`, add:
 
 ```typescript
-import open from 'open';
-
 program
   .command('serve')
   .description('Start the scry web GUI on localhost')
   .option('-p, --port <number>', 'Port to listen on', '6678')
-  .option('-c, --config <path>', 'Config file path')
   .option('--no-open', 'Skip opening the browser')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
@@ -1447,28 +1060,45 @@ program
   });
 ```
 
-Add `import open from 'open';` to the top alongside other imports.
-
-- [ ] **Step 4: Build and smoke-test manually**
+- [ ] **Step 4: Build and run the full test suite**
 
 ```bash
 npm run build
+npm test
+```
+
+Expected: TypeScript compiles cleanly; full suite passes (existing tests + new server tests).
+
+- [ ] **Step 5: Smoke-test the CLI**
+
+```bash
 cd web && npm run build && cd ..
 node dist/cli.js serve --port 6678 --no-open &
 SERVER_PID=$!
 sleep 1
 curl -s http://127.0.0.1:6678/api/health
+echo ""
 curl -s http://127.0.0.1:6678/api/csrf
-curl -sI http://127.0.0.1:6678/ | head -5
+echo ""
+curl -sI http://127.0.0.1:6678/ | head -8
 kill $SERVER_PID
 ```
 
 Expected:
 - `/api/health` returns `{"status":"ok"}`
 - `/api/csrf` returns `{"token":"<64-char hex>"}`
-- `/` returns HTML with `Content-Security-Policy` header set
+- `/` returns 200 with `Content-Security-Policy` and `X-Frame-Options: DENY` headers
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Verify existing CLI commands still work**
+
+```bash
+node dist/cli.js --help
+node dist/cli.js config show 2>&1 | head -3 || true
+```
+
+Expected: `scry --help` shows `serve` alongside the existing commands. `config show` either runs or fails on missing config (whichever is your current state); the point is: didn't regress.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/server/static.ts src/server/index.ts src/cli.ts
@@ -1477,20 +1107,14 @@ git commit -m "feat(server,cli): static handler with CSP + CSRF injection; scry 
 
 ---
 
-### Task 11: Update `package.json` scripts + `files` allowlist
+### Task 7: package.json scripts + `files` allowlist
 
 **Files:**
 - Modify: `package.json`
 
-- [ ] **Step 1: Read current `package.json` to confirm current state**
+- [ ] **Step 1: Update `scripts` and add `files`**
 
-```bash
-cat package.json | head -30
-```
-
-- [ ] **Step 2: Update `scripts` and add `files`**
-
-In `package.json`, replace the current `scripts` and `files` blocks with:
+In `package.json`, replace the current `scripts` block with:
 
 ```json
 "scripts": {
@@ -1503,32 +1127,37 @@ In `package.json`, replace the current `scripts` and `files` blocks with:
   "test": "vitest run",
   "test:watch": "vitest"
 },
+```
+
+And add (or replace the existing) `files` block:
+
+```json
 "files": [
   "dist",
   "README.md"
 ],
 ```
 
-If a `dev` or `dev:server` script existed before, replace it with the above. Keep all other top-level fields intact.
+Keep all other top-level fields (`name`, `version`, `bin`, `dependencies`, `devDependencies`, etc.) intact.
 
-- [ ] **Step 3: Verify build still works**
+- [ ] **Step 2: Verify build still works**
 
 ```bash
 npm run build
-ls dist/server/index.js dist/web/index.html
+ls dist/cli.js dist/server/index.js dist/web/index.html
 ```
 
-Expected: both files exist after the build.
+Expected: all three files exist.
 
-- [ ] **Step 4: Verify `npm pack` ships only what we want**
+- [ ] **Step 3: Verify `npm pack` ships only what we want**
 
 ```bash
 npm pack --dry-run 2>&1 | grep -E "^npm notice " | head -40
 ```
 
-Expected: only files under `dist/`, plus `README.md`, `package.json`, and `LICENSE` (if present). No `web/src`, no `node_modules`, no source files from `src/`, no `tests/`.
+Expected: only files under `dist/`, plus `README.md` and `package.json`. **No `web/src`, no `node_modules`, no source files from `src/`, no `tests/`**.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add package.json
@@ -1537,7 +1166,7 @@ git commit -m "chore: build:server + build:web scripts; explicit files allowlist
 
 ---
 
-### Task 12: Push and open PR
+### Task 8: Push and open PR
 
 **Files:** none (git only)
 
@@ -1562,72 +1191,74 @@ git push -u origin feat/web-foundation
 - [ ] **Step 3: Open the PR**
 
 ```bash
-gh pr create --title "feat: web frontend foundation (Plan A)" --body "$(cat <<'EOF'
+gh pr create --title "feat: web frontend foundation v2 (Plan A)" --body "$(cat <<'EOF'
 ## Summary
 
-Plan A of the scry web frontend rollout. Establishes:
+Plan A of the v2 scry web frontend rollout. Establishes the server + frontend
+scaffolding so subsequent plans (engine pivot, search, library, MCP/registry/
+onboarding/preferences) drop verticals onto a stable foundation.
 
-- **Server foundation** — Hono app at `127.0.0.1:6678`, scaffolded by `scry serve`
-- **Security** — Origin allowlist + per-boot CSRF token + tight CSP
-- **Engine plumbing** — `AbortSignal` threaded through `McpPool.callTool` and `synthesize`
-- **Atomic config writes** — `atomicWriteConfig` (tmp + fsync + rename + .bak) ready for Plans B–E
-- **React + Vite + Tailwind frontend** — empty SPA, theme tokens (cool teal accent, distinct from lynx amber), CSRF/api/sse client libs ready
-- **`scry serve` subcommand** — boots the server and opens the browser
+This PR lands:
+- **Cross-cutting types** (`src/shared/types.ts`)
+- **Atomic config write helper** (`src/config/atomic-write.ts`) with `.bak` + tmp+fsync+rename
+- **Hono server** at `127.0.0.1:6678` with Origin allowlist + per-boot CSRF token + tight CSP
+- **`scry serve` subcommand** that boots the server and opens the browser
+- **React + Vite + Tailwind frontend** — empty SPA with theme tokens (cool teal accent, distinct from lynx amber); CSRF + API + fetch-streaming client libs ready
+- **Build pipeline** — tsc for server, Vite for web, output to `dist/`
+- **Explicit `files` allowlist** — only `dist/` and `README.md` ship to npm
 
-No feature surfaces yet — search, MCP CRUD, settings, and onboarding land in Plans B–E on top of this.
+No engine, no real surfaces yet. The CLI's existing `scry "<query>"` and
+`scry config show` continue to work unchanged.
 
-Spec: `docs/superpowers/specs/2026-05-21-scry-web-frontend-design.md`
-Plan: `docs/superpowers/plans/2026-05-22-scry-web-foundation.md`
+Spec: [`docs/superpowers/specs/2026-05-22-scry-web-frontend-v2-design.md`](./docs/superpowers/specs/2026-05-22-scry-web-frontend-v2-design.md)
+Plan: [`docs/superpowers/plans/2026-05-22-scry-web-foundation-v2.md`](./docs/superpowers/plans/2026-05-22-scry-web-foundation-v2.md)
 
 ## Test plan
 
-- [x] `npm test` — all unit tests pass (existing engine + new atomic-write, abort, origin, csrf, server scaffold, csrf-token tests)
-- [x] `npm run build` — server tsc clean + web Vite build clean
-- [x] `node dist/cli.js serve --port 6678 --no-open` boots; `curl /api/health` returns `{"status":"ok"}`; `curl /api/csrf` returns a 64-char hex token
-- [x] Browser at `http://127.0.0.1:6678/` shows the empty SPA shell with the placeholder text
-- [x] Cross-origin curl (`-H "Origin: http://evil.example.com"`) gets 403
-- [x] POST without `X-Scry-Csrf` gets 403; with the boot token gets through
-- [x] `npm pack --dry-run` shows only `dist/` and `README.md` — no `web/src/`, no source files
+- [x] `npm test` — all unit tests pass (existing engine + new atomic-write, origin, csrf, server scaffold tests)
+- [x] `npm run build` — server `tsc` clean + web Vite build clean
+- [x] `node dist/cli.js serve --port 6678 --no-open` boots; `/api/health` returns `{"status":"ok"}`; `/api/csrf` returns a 64-char hex token; `/` serves the SPA with `Content-Security-Policy` + `X-Frame-Options: DENY`
+- [x] Browser at `http://127.0.0.1:6678/` shows the empty SPA shell
+- [x] Cross-origin `curl -H "Origin: http://evil.example.com"` rejected with 403
+- [x] `POST` without `X-Scry-Csrf` rejected with 403; with the boot token passes
+- [x] `npm pack --dry-run` shows only `dist/` and `README.md` — no `web/src/`, no source files, no node_modules
 - [x] `scry "<query>"` (CLI) continues to work unchanged
 
 ## Out of scope (follow-up plans)
 
-- Plan B: search route + UI (SSE end-to-end)
-- Plan C: MCP manager (CRUD + atomic pool swap)
-- Plan D: settings (config editor, redaction, env-var-only auth)
-- Plan E: onboarding wizard
-- Plan F: E2E Playwright smoke tests + npm publish hardening
+- Plan B: engine pivot to `@anthropic-ai/claude-agent-sdk` + storage (sessions SQLite) + CLI restructure
+- Plan C: search route + UI (fetch streaming, citations, source rail)
+- Plan D: library sidebar + follow-up resume
+- Plan E: MCP manager
+- Plan F: registry editor
+- Plan G: onboarding wizard
+- Plan H: preferences + theme toggle
+- Plan I: E2E Playwright + npm publish prep
 EOF
 )"
 ```
 
 - [ ] **Step 4: Wait for review + sign-off before merge**
 
-Per `DEPLOYMENT.md`: PRs are for review, not auto-merge. Don't merge until the user confirms.
+Per `the-product-kitchen/.claude/rules/DEPLOYMENT.md`: PRs are for review, not auto-merge. Don't merge until the user confirms it works in a live session.
 
 ---
 
 ## Self-Review
 
-**Spec coverage:**
-- Repo layout (`src/shared`, `src/server`, `web/`) → Tasks 1, 7, 8
-- Atomic config writes → Task 2
-- AbortSignal threading → Task 3
-- Hono server + Origin + CSRF + CSP → Tasks 4, 5, 6, 7, 10
-- Frontend scaffold + theme tokens → Task 8
-- Frontend client libs (csrf, api, sse) → Task 9
-- `scry serve` subcommand → Task 10
-- `package.json` scripts + `files` allowlist → Task 11
-- Branch + PR per `DEPLOYMENT.md` → Tasks 1, 12
+**Spec coverage** (mapped against v2 spec sections):
 
-Not in Plan A by design (covered in B–F): search route + UI, MCP CRUD, settings UI, onboarding wizard, E2E Playwright, npm publish.
+- v2 spec §Architecture — *Security (carries from Plan A)*: Origin allowlist (Task 1), CSRF (Task 2), CSP via static handler (Task 6), atomic config writes (already on branch via W2). All covered for the foundation; full Engine + Storage land in Plan B.
+- v2 spec §Repo layout — additions `src/server/*` (Tasks 1–3, 6), `web/*` scaffold (Task 4), client libs (Task 5). `src/engine/*`, `src/storage/*`, `src/cli/*` restructure are explicitly out-of-scope (Plan B).
+- v2 spec §Dev workflow — `npm run dev` / `npm run build` (Task 7).
+- v2 spec §Risks — `.npmignore`/files leak handled by explicit allowlist (Task 7); cross-origin handled by Origin middleware (Task 1).
 
-**Placeholder scan:** No "TBD"s, no "TODO"s, no "implement later". Each step has its actual code or its actual command.
+**Placeholder scan:** None. Each step has its actual code or actual command.
 
 **Type consistency:**
-- `getCsrfToken` is async on the client, sync on the server — these are different functions in different files (server/middleware/csrf-token.ts vs web/src/lib/csrf.ts). Same name is intentional and clear from import path.
-- `ServerOptions` shape consistent across `createServer` and `startServer`.
-- `ApiError`, `ApiResult` defined in `src/shared/types.ts`, used in `web/src/lib/api.ts` via `@shared/*` alias.
-- `raceAbort` signature consistent across abort.ts and its call sites (mcp-pool, synthesizer).
+- `getCsrfToken` exists at server (sync) and on the client (async) — different files, different mechanisms (server holds the token, client reads from meta tag or fetches `/api/csrf`). Same name is intentional.
+- `ServerOptions` is consistent across `createServer` and `startServer`.
+- `ApiError` and `ApiResult` are defined in `src/shared/types.ts` (already on branch from W1) and referenced via the `@shared/*` alias from `web/`.
+- `staticHandler(rootDir)` signature consistent across `static.ts` and the call in `index.ts`.
 
-Plan is ready for execution.
+Plan ready for execution.
