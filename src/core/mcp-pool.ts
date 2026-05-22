@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { McpServerConfig } from '../config/types.js';
+import { raceAbort } from './abort.js';
 
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -52,7 +53,12 @@ export class McpPool {
     }
   }
 
-  async callTool(toolName: string, args: Record<string, unknown>, timeoutMs: number = 15000): Promise<string> {
+  async callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    timeoutMs: number = 15000,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const serverName = this.toolToServer.get(toolName);
     if (!serverName) {
       throw new Error(`Unknown tool: ${toolName}`);
@@ -63,9 +69,12 @@ export class McpPool {
       throw new Error(`Server ${serverName} not connected`);
     }
 
-    const result = await withTimeout(
-      conn.client.callTool({ name: toolName, arguments: args }),
-      timeoutMs
+    const result = await raceAbort(
+      withTimeout(
+        conn.client.callTool({ name: toolName, arguments: args }),
+        timeoutMs
+      ),
+      signal,
     );
     const texts: string[] = [];
     for (const block of result.content as Array<{ type: string; text?: string }>) {
