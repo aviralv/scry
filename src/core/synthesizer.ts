@@ -49,8 +49,7 @@ export function parseSynthesisResponse(text: string, results: SearchResult[]): C
 export async function synthesize(
   query: string,
   results: SearchResult[],
-  llmConfig: LlmConfig,
-  signal?: AbortSignal,
+  llmConfig: LlmConfig
 ): Promise<SynthesisResult> {
   const userMessage = buildSynthesisPrompt(query, results);
 
@@ -68,7 +67,6 @@ export async function synthesize(
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     }),
-    signal,
   });
 
   if (!response.ok) {
