@@ -1,7 +1,9 @@
 # scry web frontend (v1) — design spec
 
+> **⚠ SUPERSEDED by [2026-05-22-scry-web-frontend-v2-design.md](./2026-05-22-scry-web-frontend-v2-design.md).** Engine pivoted from custom (planner+pool+normalizer+synthesizer) to `@anthropic-ai/claude-agent-sdk`; UI reshaped Perplexity-style with library sidebar; several architecture details revised. This file is kept for history.
+
 **Date:** 2026-05-21 (revised 2026-05-22 after Opus + GPT + Gemini review)
-**Status:** Approved, pending user sign-off before plan
+**Status:** Superseded — see header
 **Builds on:** [scry CLI v0.1.3](../../../README.md), [lynx](../../../../lynx/README.md) (visual + UX reference)
 **Out of scope:** publishing v1 to npm (decided separately)
 
