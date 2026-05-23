@@ -1,0 +1,40 @@
+:root {
+  --scry-bg-primary: #0c0e10;
+  --scry-bg-secondary: #14171a;
+  --scry-bg-sidebar: #0a0c0e;
+  --scry-bg-elevated: #1c2024;
+
+  --scry-text-primary: #ecefe8;
+  --scry-text-secondary: #b4bcb6;
+  --scry-text-tertiary: #6e7770;
+
+  --scry-accent: #3aa39c;
+  --scry-accent-dim: #2a7a76;
+  --scry-accent-glow: rgba(58, 163, 156, 0.18);
+
+  --scry-error: #d96363;
+  --scry-warning: #d9a03a;
+  --scry-success: #5ab07e;
+
+  --scry-border: #232629;
+  --scry-divider: #1a1d20;
+
+  --scry-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --scry-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --scry-radius-sm: 4px;
+  --scry-radius-md: 8px;
+  --scry-radius-lg: 12px;
+}
+
+[data-theme='light'] {
+  --scry-bg-primary: #f8f9f7;
+  --scry-bg-secondary: #eef0ec;
+  --scry-bg-sidebar: #e6e8e3;
+  --scry-bg-elevated: #ffffff;
+  --scry-text-primary: #1a1d1f;
+  --scry-text-secondary: #4a5052;
+  --scry-text-tertiary: #7a8082;
+  --scry-border: #d0d4d2;
+  --scry-divider: #e0e3e0;
+}
