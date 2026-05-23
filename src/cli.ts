@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { existsSync } from 'fs';
+import open from 'open';
 import { loadConfig, resolveConfigPath } from './config/loader.js';
 import { getRegistry } from './core/registry.js';
 import { detectEntities } from './core/detector.js';
@@ -149,6 +150,22 @@ program
   .action(async (opts) => {
     const { runInit } = await import('./init/init.js');
     await runInit(opts.dir);
+  });
+
+program
+  .command('serve')
+  .description('Start the scry web GUI on localhost')
+  .option('-p, --port <number>', 'Port to listen on', '6678')
+  .option('--no-open', 'Skip opening the browser')
+  .action(async (opts) => {
+    const port = parseInt(opts.port, 10);
+    const { startServer } = await import('./server/boot.js');
+    startServer({ port });
+    const url = `http://127.0.0.1:${port}`;
+    console.error(`⟐ scry web running at ${url}`);
+    if (opts.open !== false) {
+      await open(url);
+    }
   });
 
 function resolveNormalizer(server: string, tool: string, config: ScryConfig): NormalizerFn {
