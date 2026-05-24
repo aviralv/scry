@@ -62,23 +62,20 @@ function printEvent(event: RunQueryEvent): void {
       console.error(`⟐ → ${event.tool}`);
       break;
     case 'tool-result':
-      console.error(`⟐   [${event.sourceIndex}] ${event.source.title}`);
+      // The source-tracker accumulates raw tool_result data for the future
+      // GUI source rail (Plan C). In the CLI we don't print a sources block:
+      // Claude's synthesis already enumerates sources at the end of its
+      // answer with proper titles + URLs, and Claude's [N] citations index
+      // its own enumeration (not scry's arrival-order list). Printing a
+      // separate scry list would be both redundant and misleading.
       break;
     case 'assistant-text':
       process.stdout.write(event.text + '\n');
       break;
     case 'citation':
-      // Inline citations are visible in the assistant text already; no extra log.
       break;
     case 'done':
-      if (event.sources.length > 0) {
-        console.log('');
-        console.log('Sources:');
-        for (const s of event.sources) {
-          console.log(`[${s.index}] ${s.source}: ${s.title} — ${s.author ?? 'unknown'} — ${s.timestamp ?? ''}`);
-          if (s.url) console.log(`    ${s.url}`);
-        }
-      }
+      // No `Sources:` block — Claude's synthesis already enumerates sources.
       break;
     case 'error':
       console.error(`⟐ error: ${event.message}`);
