@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { promises as fs } from 'fs';
-import { join, normalize } from 'path';
+import { join, normalize, sep } from 'path';
 import { getCsrfToken } from './middleware/csrf-token.js';
 
 const MIME: Record<string, string> = {
@@ -29,8 +29,9 @@ export function staticHandler(rootDir: string): MiddlewareHandler {
     const hasExt = /\.[a-z0-9]+$/i.test(urlPath);
     const target = hasExt ? urlPath : '/index.html';
     const fsPath = normalize(join(rootDir, target));
+    const rootPrefix = normalize(rootDir) + sep;
 
-    if (!fsPath.startsWith(normalize(rootDir))) {
+    if (!fsPath.startsWith(rootPrefix) && fsPath !== normalize(rootDir)) {
       return c.json({ error: 'forbidden' }, 403);
     }
 
