@@ -117,7 +117,8 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
     // Stream ended without `result`.
     yield { type: 'done', sessionId, sources: tracker.sources, finalAnswer };
   } catch (err) {
-    yield { type: 'error', message: (err as Error).message ?? String(err) };
+    const message = err instanceof Error ? err.message : String(err);
+    yield { type: 'error', message };
   }
 }
 
@@ -155,22 +156,25 @@ function parseToolResult(
   const raw = block.content;
   let payload: { title?: string; snippet?: string; author?: string; timestamp?: string; url?: string } = {};
 
-  // Normalize array-form content into a single string by concatenating
-  // text blocks. (MCP servers commonly return content as
-  // Array<{ type: 'text', text: string }> rather than a raw JSON string.)
+  // Normalize array-form content. MCP servers commonly return
+  // Array<{ type: 'text', text: string }>. Most servers send a single
+  // text block per tool_result; we take the first block to avoid
+  // joining multiple JSON-formatted blocks into invalid JSON. When
+  // multiple blocks exist, only the first is used — that's a known
+  // limitation; downstream consumers should paginate via tool args
+  // rather than expecting multi-block parsing here.
   let asString: string | null = null;
   if (typeof raw === 'string') {
     asString = raw;
   } else if (Array.isArray(raw)) {
-    asString = raw
-      .filter((b): b is { type: string; text: string } =>
+    const firstText = raw.find(
+      (b): b is { type: string; text: string } =>
         b !== null &&
         typeof b === 'object' &&
         (b as Record<string, unknown>).type === 'text' &&
         typeof (b as Record<string, unknown>).text === 'string',
-      )
-      .map((b) => b.text)
-      .join('\n');
+    );
+    asString = firstText ? firstText.text : null;
   }
 
   if (asString !== null) {

@@ -31,19 +31,24 @@ export function registerHeadless(program: Command): void {
       const scryConfigDir = dirname(resolve(configPath));
 
       const ctl = new AbortController();
-      process.on('SIGINT', () => ctl.abort());
+      const onSigint = () => ctl.abort();
+      process.once('SIGINT', onSigint);
 
-      const stream = runQuery({
-        prompt: query,
-        config,
-        scryConfigDir,
-        signal: ctl.signal,
-        fanoutMode: Boolean(opts.fanout),
-      });
+      try {
+        const stream = runQuery({
+          prompt: query,
+          config,
+          scryConfigDir,
+          signal: ctl.signal,
+          fanoutMode: Boolean(opts.fanout),
+        });
 
-      for await (const event of stream) {
-        printEvent(event);
-        if (ctl.signal.aborted) break;
+        for await (const event of stream) {
+          printEvent(event);
+          if (ctl.signal.aborted) break;
+        }
+      } finally {
+        process.removeListener('SIGINT', onSigint);
       }
     });
 }

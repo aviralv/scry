@@ -10,7 +10,7 @@ const program = new Command();
 program
   .name('scry')
   .description('Federated search orchestrator over MCP')
-  .version('0.1.3');
+  .version('0.2.0');
 
 registerHeadless(program);
 registerServe(program);

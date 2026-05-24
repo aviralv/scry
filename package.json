@@ -7,7 +7,6 @@
   "description": "Federated search orchestrator over MCP",
   "type": "module",
   "main": "./dist/cli/index.js",
-  "types": "./dist/index.d.ts",
   "bin": {
     "scry": "dist/cli/index.js"
   },
