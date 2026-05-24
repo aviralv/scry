@@ -35,7 +35,7 @@
 
 ---
 
-### Task 1: Branch + dependency swap
+### Task 1: Branch + dependency swap + verify SDK shape
 
 **Files:** `package.json`, `package-lock.json`
 
@@ -48,15 +48,34 @@ npm install @anthropic-ai/claude-agent-sdk
 npm uninstall @anthropic-ai/sdk
 ```
 
-- [ ] **Step 2: Verify build still works (engine still uses old code at this point)**
+- [ ] **Step 2: Verify the SDK's actual API shape — read its types now, before any engine code is written**
+
+```bash
+ls node_modules/@anthropic-ai/claude-agent-sdk/
+cat node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts | head -400
+```
+
+Look for:
+1. The `query()` function signature — what does its `options` param accept? Confirm `cwd`, `systemPrompt`, `mcpServers`, `resume`, `abortController` are all there as the spec assumes.
+2. The async-iterable element type (the SDK's "message" union). Note the literal `type` discriminators — common conventions:
+   - `system` / `system.init` (carries `session_id`)
+   - `assistant` (with a `message.content[]` array of `text` and `tool_use` blocks)
+   - `user` (with a `message.content[]` array of `tool_result` blocks)
+   - `result` (final completion message)
+   The plan's T5 implementation and test fixtures dispatch on these. **If the real names differ, both must be updated together when T5 lands.** Capture what you saw in a comment block at the top of `runQuery.ts` (T5 step 1 reminds you to do this).
+3. Whether `mcpServers` accepts the shape `{ name: { command, args, env } }` or a richer shape (e.g. transport variants). The plan's `buildMcpServers` helper assumes the simple form.
+
+If the SDK's API differs materially from what this plan assumes (e.g. no `mcpServers` option, or `query()` is class-based instead of a function returning an async iterable), **STOP and report** — the plan needs adjustment before any further task can proceed.
+
+- [ ] **Step 3: Verify build still works (engine still uses old code at this point)**
 
 ```bash
 npm run build 2>&1 | tail -3
 ```
 
-If `@anthropic-ai/sdk` was directly imported by `src/core/synthesizer.ts`, it'll fail. The synthesizer uses raw `fetch()` (no SDK import), so the removal should not break the build. If it does, **STOP and report** — the plan needs adjustment.
+If `@anthropic-ai/sdk` was directly imported by `src/core/synthesizer.ts`, it'll fail. The synthesizer uses raw `fetch()` (no SDK import), so the removal should not break the build. If it does, **STOP and report**.
 
-- [ ] **Step 3: Run full test suite**
+- [ ] **Step 4: Run full test suite**
 
 ```bash
 npm test 2>&1 | tail -3
@@ -64,7 +83,7 @@ npm test 2>&1 | tail -3
 
 Expected: same count as `main` (190).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add package.json package-lock.json
@@ -518,6 +537,30 @@ describe('runQuery', () => {
     const last = events[events.length - 1];
     expect(last.type).toBe('error');
     if (last.type === 'error') expect(last.message).toContain('boom');
+  });
+
+  it('emits done when iterator completes naturally without a result event', async () => {
+    // Some SDK versions may not emit an explicit `result` message — the
+    // stream just ends. runQuery should still emit a `done` event.
+    const fakeQuery = async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-4' };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'final' }] } };
+      // No 'result' message — stream just ends here.
+    };
+    const events = await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        queryFn: fakeQuery as never,
+      }),
+    );
+    const last = events[events.length - 1];
+    expect(last.type).toBe('done');
+    if (last.type === 'done') {
+      expect(last.sessionId).toBe('sess-4');
+      expect(last.finalAnswer).toContain('final');
+    }
   });
 });
 ```
