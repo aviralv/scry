@@ -47,7 +47,15 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   const toolUseMap = new Map<string, { tool: string; server: string }>();
   const tracker = new SourceTracker(opts.priorSources ?? []);
 
-  // 5. Call SDK (or injected fake).
+  // 5. Build allowedTools — restrict Claude to ONLY the configured search
+  // tools. This blocks Claude Code's built-ins (Task, Bash, Read, Edit, etc.)
+  // so the agent can't spawn subagents or touch the filesystem; it can only
+  // call the MCP tools the user has explicitly listed in scry.config.yaml.
+  const allowedTools = Object.entries(opts.config.search_tools).flatMap(
+    ([server, tools]) => tools.map((t) => `mcp__${server}__${t.tool}`),
+  );
+
+  // 6. Call SDK (or injected fake).
   const queryFn = opts.queryFn ?? realQuery;
   const stream = queryFn({
     prompt: opts.prompt,
@@ -57,6 +65,13 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
       cwd: opts.scryConfigDir,
       resume: opts.resume,
       abortController,
+      // Headless: no UI to approve permission prompts. The user has
+      // already authorized these MCPs by configuring them in scry.config.yaml.
+      // Combined with the allowedTools restriction above, the bypass is
+      // bounded to exactly the configured search tools.
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      allowedTools,
     } as never, // SDK option type is wide; conservative cast
   });
 
