@@ -1,26 +1,16 @@
 // src/cli/headless.ts
 import type { Command } from 'commander';
+import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';
 import { loadConfig, resolveConfigPath } from '../config/loader.js';
-import { getRegistry } from '../core/registry.js';
-import { detectEntities } from '../core/detector.js';
-import { buildSearchPlan } from '../core/planner.js';
-import { McpPool } from '../core/mcp-pool.js';
-import { normalizerRegistry, normalizeGeneric } from '../core/normalizer.js';
-import type { NormalizerFn } from '../core/normalizer.js';
-import { findBundledServer } from '../config/bundled-servers.js';
-import { synthesize } from '../core/synthesizer.js';
-import type { ScryConfig, SearchResult } from '../config/types.js';
-
-// NOTE: This file uses the OLD engine via src/core/*. Task 7 replaces this
-// body with a call to runQuery. Task 8 deletes src/core/*.
+import { runQuery } from '../engine/runQuery.js';
+import type { RunQueryEvent } from '../engine/types.js';
 
 export function registerHeadless(program: Command): void {
   program
     .argument('[query...]', 'Search query')
     .option('-c, --config <path>', 'Config file path (default: ./scry.config.yaml or ~/.config/scry/scry.config.yaml)')
-    .option('--no-synthesize', 'Skip LLM synthesis, show raw results')
-    .option('-t, --timeout <ms>', 'Per-source timeout in ms', '15000')
+    .option('--fanout', 'Force the agent to call all configured search tools first')
     .action(async (queryParts: string[], opts) => {
       const query = queryParts.join(' ');
       if (!query) {
@@ -38,84 +28,56 @@ export function registerHeadless(program: Command): void {
       }
 
       const config = loadConfig(configPath);
-      const registry = getRegistry(config);
+      const scryConfigDir = dirname(resolve(configPath));
 
-      const entities = detectEntities(query, registry);
-      if (entities.projects.length > 0 || entities.people.length > 0) {
-        const names = [
-          ...entities.projects.map((p) => p.name),
-          ...entities.people.map((p) => p.name),
-        ];
-        console.error(`⟐ Detected: ${names.join(', ')}`);
-      }
+      const ctl = new AbortController();
+      process.on('SIGINT', () => ctl.abort());
 
-      const plan = buildSearchPlan(query, entities, config);
-      console.error(`⟐ Searching ${plan.length} sources...`);
+      const stream = runQuery({
+        prompt: query,
+        config,
+        scryConfigDir,
+        signal: ctl.signal,
+        fanoutMode: Boolean(opts.fanout),
+      });
 
-      const pool = new McpPool();
-      try {
-        await pool.connect(config.mcp_servers);
-        const timeoutMs = parseInt(opts.timeout ?? '15000', 10);
-        const searchPromises = plan.map(async (action) => {
-          const raw = await pool.callTool(action.tool, action.params, timeoutMs);
-          return { server: action.server, tool: action.tool, raw };
-        });
-        const settled = await Promise.allSettled(searchPromises);
-        const allResults: SearchResult[] = [];
-        const failures: string[] = [];
-        for (const result of settled) {
-          if (result.status === 'fulfilled' && result.value.raw) {
-            const { server, tool, raw } = result.value;
-            const normalize = resolveNormalizer(server, tool, config);
-            allResults.push(...normalize(raw, server));
-          } else if (result.status === 'rejected') {
-            failures.push(result.reason?.message ?? 'unknown error');
-          }
-        }
-        if (failures.length > 0) {
-          console.error(`⟐ ${failures.length} source(s) failed: ${failures.join('; ')}`);
-        }
-        if (allResults.length === 0) {
-          console.log('No results found across any source.');
-          return;
-        }
-        console.error(`⟐ Found ${allResults.length} results, synthesizing...`);
-        if (!opts.synthesize) {
-          for (const r of allResults) {
-            console.log(`[${r.source}] ${r.title} — ${r.author ?? ''}`);
-            console.log(`  ${r.snippet.slice(0, 120)}`);
-            console.log(`  ${r.url ?? ''}\n`);
-          }
-          return;
-        }
-        const result = await synthesize(query, allResults, config.llm);
-        console.log('');
-        console.log(result.answer);
-        console.log('');
-        console.log('Sources:');
-        for (const c of result.citations) {
-          console.log(`[${c.index}] ${c.source}: ${c.title} — ${c.author ?? 'unknown'} — ${c.timestamp}`);
-          if (c.url) console.log(`    ${c.url}`);
-        }
-      } finally {
-        await pool.shutdown();
+      for await (const event of stream) {
+        printEvent(event);
+        if (ctl.signal.aborted) break;
       }
     });
 }
 
-function resolveNormalizer(server: string, tool: string, config: ScryConfig): NormalizerFn {
-  const toolConfigs = config.search_tools[server] ?? [];
-  const toolConfig = toolConfigs.find((t) => t.tool === tool);
-  if (toolConfig?.normalizer) {
-    return normalizerRegistry.get(toolConfig.normalizer) ?? normalizeGeneric;
+function printEvent(event: RunQueryEvent): void {
+  switch (event.type) {
+    case 'session-init':
+      console.error(`⟐ session ${event.sessionId.slice(0, 8)}`);
+      break;
+    case 'tool-call':
+      console.error(`⟐ → ${event.tool}`);
+      break;
+    case 'tool-result':
+      console.error(`⟐   [${event.sourceIndex}] ${event.source.title}`);
+      break;
+    case 'assistant-text':
+      process.stdout.write(event.text + '\n');
+      break;
+    case 'citation':
+      // Inline citations are visible in the assistant text already; no extra log.
+      break;
+    case 'done':
+      if (event.sources.length > 0) {
+        console.log('');
+        console.log('Sources:');
+        for (const s of event.sources) {
+          console.log(`[${s.index}] ${s.source}: ${s.title} — ${s.author ?? 'unknown'} — ${s.timestamp ?? ''}`);
+          if (s.url) console.log(`    ${s.url}`);
+        }
+      }
+      break;
+    case 'error':
+      console.error(`⟐ error: ${event.message}`);
+      process.exitCode = 1;
+      break;
   }
-  const serverConfig = config.mcp_servers[server];
-  if (serverConfig) {
-    const bundled = findBundledServer(serverConfig.command);
-    const bundledTool = bundled?.searchTools.find((t) => t.tool === tool);
-    if (bundledTool?.normalizer) {
-      return normalizerRegistry.get(bundledTool.normalizer) ?? normalizeGeneric;
-    }
-  }
-  return normalizeGeneric;
 }
