@@ -16,9 +16,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build:server": "tsc",
+    "build:web": "cd web && npm run build",
+    "build": "npm run build:server && npm run build:web",
     "prepublishOnly": "npm run build",
-    "dev": "tsx src/cli.ts",
+    "dev:server": "tsc --watch",
+    "dev:web": "cd web && npm run dev",
     "test": "vitest run",
     "test:watch": "vitest"
   },
