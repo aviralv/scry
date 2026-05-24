@@ -155,13 +155,31 @@ function parseToolResult(
   const raw = block.content;
   let payload: { title?: string; snippet?: string; author?: string; timestamp?: string; url?: string } = {};
 
+  // Normalize array-form content into a single string by concatenating
+  // text blocks. (MCP servers commonly return content as
+  // Array<{ type: 'text', text: string }> rather than a raw JSON string.)
+  let asString: string | null = null;
   if (typeof raw === 'string') {
+    asString = raw;
+  } else if (Array.isArray(raw)) {
+    asString = raw
+      .filter((b): b is { type: string; text: string } =>
+        b !== null &&
+        typeof b === 'object' &&
+        (b as Record<string, unknown>).type === 'text' &&
+        typeof (b as Record<string, unknown>).text === 'string',
+      )
+      .map((b) => b.text)
+      .join('\n');
+  }
+
+  if (asString !== null) {
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(asString);
       const first = Array.isArray(parsed) ? parsed[0] : parsed;
       payload = first ?? {};
     } catch {
-      payload = { title: 'tool result', snippet: raw.slice(0, 200) };
+      payload = { title: 'tool result', snippet: asString.slice(0, 200) };
     }
   }
 

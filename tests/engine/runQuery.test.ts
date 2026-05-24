@@ -131,4 +131,51 @@ describe('runQuery', () => {
       expect(last.finalAnswer).toContain('final');
     }
   });
+
+  it('handles array-form tool_result content (MCP-style)', async () => {
+    const fakeQuery = async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-arr' };
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 't-arr', name: 'slack_search', input: { query: 'x' } }],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 't-arr',
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify([{ title: 'Array msg', snippet: 'from array form', author: 'a' }]),
+                },
+              ],
+            },
+          ],
+        },
+      };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Array done [1]' }] } };
+      yield { type: 'result', subtype: 'success', session_id: 'sess-arr' };
+    };
+
+    const events = await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        queryFn: fakeQuery as never,
+      }),
+    );
+
+    const tr = events.find((e) => e.type === 'tool-result');
+    expect(tr).toBeDefined();
+    if (tr && tr.type === 'tool-result') {
+      expect(tr.source.title).toBe('Array msg');
+      expect(tr.source.snippet).toBe('from array form');
+    }
+  });
 });
