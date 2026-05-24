@@ -1,0 +1,12 @@
+@import './theme/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  background: var(--scry-bg-primary);
+  color: var(--scry-text-primary);
+  font-family: var(--scry-sans);
+}
