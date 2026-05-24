@@ -2,6 +2,14 @@
 // Consumes a text/event-stream response from a fetch() call.
 // (NOT EventSource — that doesn't support custom headers like X-Scry-Csrf.)
 // Used by Plan C's search route.
+//
+// Cancellation: this consumer checks `signal?.aborted` between read() calls,
+// which means a stalled stream (long pause between bytes) won't observe an
+// abort until the next chunk arrives. The proper fix lives at the call site:
+// pass `signal` to the upstream `fetch()` so an abort terminates the underlying
+// HTTP socket, which in turn unblocks `reader.read()`. Plan C wiring should do
+// `apiFetch(path, { method: 'POST', body, signal })` and pass the same `signal`
+// here.
 
 export interface StreamHandler<T> {
   onEvent: (event: T) => void;

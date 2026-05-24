@@ -46,7 +46,7 @@ export function staticHandler(rootDir: string): MiddlewareHandler {
     }
 
     if (target.endsWith('.html')) {
-      content = content.toString('utf-8').replace('__SCRY_CSRF__', getCsrfToken());
+      content = content.toString('utf-8').replaceAll('__SCRY_CSRF__', getCsrfToken());
     }
 
     return new Response(typeof content === 'string' ? content : new Uint8Array(content), {
