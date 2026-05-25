@@ -51,7 +51,7 @@ export const searchRoute = new Hono().post('/', async (c) => {
     let lastEventAt = Date.now();
     const keepAlive = setInterval(() => {
       if (Date.now() - lastEventAt >= 15_000) {
-        stream.writeSSE({ data: ': keepalive' }).catch(() => {});
+        stream.writeSSE({ data: JSON.stringify({ type: 'keepalive' }) }).catch(() => {});
       }
     }, 5_000);
 
