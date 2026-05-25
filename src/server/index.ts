@@ -6,6 +6,7 @@ import { originAllowlist } from './middleware/origin.js';
 import { csrfRequired } from './middleware/csrf.js';
 import { healthRoute } from './routes/health.js';
 import { csrfRoute } from './routes/csrf.js';
+import { searchRoute } from './routes/search.js';
 import { staticHandler } from './static.js';
 
 export interface ServerOptions {
@@ -24,6 +25,7 @@ export function createServer(opts: ServerOptions) {
 
   app.route('/api/health', healthRoute);
   app.route('/api/csrf', csrfRoute);
+  app.route('/api/search', searchRoute);
 
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
   app.use('*', staticHandler(staticDir));
