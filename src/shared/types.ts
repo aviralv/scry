@@ -11,3 +11,5 @@ export interface ApiError {
 export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ApiError };
+
+export type { SourceCard, Citation, RunQueryEvent } from '../engine/types.js';
