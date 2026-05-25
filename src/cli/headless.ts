@@ -74,6 +74,9 @@ function printEvent(event: RunQueryEvent): void {
       break;
     case 'citation':
       break;
+    case 'sources-finalized':
+      // GUI-only event; CLI relies on Claude's prose Sources block in 'assistant-text'.
+      break;
     case 'done':
       // No `Sources:` block — Claude's synthesis already enumerates sources.
       break;
