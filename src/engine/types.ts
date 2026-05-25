@@ -38,5 +38,6 @@ export type RunQueryEvent =
   | { type: 'tool-result'; tool: string; sourceIndex: number; source: SourceCard }
   | { type: 'assistant-text'; text: string }
   | { type: 'citation'; index: number; source: SourceCard }
+  | { type: 'sources-finalized'; sources: SourceCard[] }    // canonical source list from Claude's enumeration
   | { type: 'done'; sessionId: string; sources: SourceCard[]; finalAnswer: string }
   | { type: 'error'; message: string };

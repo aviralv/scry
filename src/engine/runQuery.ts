@@ -17,6 +17,7 @@ import type { McpServerConfig } from '../config/types.js';
 import type { RunQueryOptions, RunQueryEvent, SourceCard } from './types.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { SourceTracker } from './source-tracker.js';
+import { parseSources } from './parse-sources.js';
 
 export interface RunQueryInternalOptions extends RunQueryOptions {
   /** Dependency-inject a fake query function for tests. */
@@ -124,16 +125,30 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
 
       if (m.type === 'result') {
         const sid = typeof m.session_id === 'string' ? m.session_id : sessionId;
-        yield { type: 'done', sessionId: sid, sources: tracker.sources, finalAnswer };
+        yield* finalize(sid);
         return;
       }
       // Any other message type: ignore.
     }
     // Stream ended without `result`.
-    yield { type: 'done', sessionId, sources: tracker.sources, finalAnswer };
+    yield* finalize(sessionId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     yield { type: 'error', message };
+  }
+
+  function* finalize(sid: string): Generator<RunQueryEvent> {
+    const parsed = parseSources(finalAnswer);
+    if (parsed.length > 0) {
+      // Replace the in-memory tracker list with canonical sources from Claude's enumeration.
+      // The parsed list is what the GUI uses; the streaming arrival-order list was only for
+      // progress UI and is now superseded.
+      yield { type: 'sources-finalized', sources: parsed };
+      yield { type: 'done', sessionId: sid, sources: parsed, finalAnswer };
+    } else {
+      // No parseable enumeration — fall back to streaming arrival-order list.
+      yield { type: 'done', sessionId: sid, sources: tracker.sources, finalAnswer };
+    }
   }
 }
 
