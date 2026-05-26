@@ -10,10 +10,11 @@ import type { RunQueryEvent } from '../../engine/types.js';
 const BodySchema = z.object({
   query: z.string().min(1),
   fanoutMode: z.boolean().optional(),
+  sessionId: z.string().min(1).optional(),
 });
 
 export const searchRoute = new Hono().post('/', async (c) => {
-  let body: { query: string; fanoutMode?: boolean };
+  let body: { query: string; fanoutMode?: boolean; sessionId?: string };
   try {
     const raw = await c.req.json();
     body = BodySchema.parse(raw);
@@ -62,6 +63,7 @@ export const searchRoute = new Hono().post('/', async (c) => {
         scryConfigDir,
         signal: ctl.signal,
         fanoutMode: Boolean(body.fanoutMode),
+        resume: body.sessionId,
       });
 
       for await (const event of queryStream) {

@@ -6,9 +6,10 @@ import { sanitizeUrl } from '../lib/sanitize.js';
 interface Props {
   card: SourceCardData;
   highlighted?: boolean;
+  turnIndex?: number;
 }
 
-export function SourceCard({ card, highlighted }: Props): JSX.Element {
+export function SourceCard({ card, highlighted, turnIndex }: Props): JSX.Element {
   const url = sanitizeUrl(card.url);
   const className = [
     'source-card',
@@ -36,7 +37,7 @@ export function SourceCard({ card, highlighted }: Props): JSX.Element {
   if (url) {
     return (
       <a
-        id={`source-card-${card.index}`}
+        id={`source-card-${turnIndex ?? 0}-${card.index}`}
         className={className + ' hover:bg-bg-secondary cursor-pointer'}
         href={url}
         target="_blank"
@@ -47,7 +48,7 @@ export function SourceCard({ card, highlighted }: Props): JSX.Element {
     );
   }
   return (
-    <div id={`source-card-${card.index}`} className={className}>
+    <div id={`source-card-${turnIndex ?? 0}-${card.index}`} className={className}>
       {content}
     </div>
   );
