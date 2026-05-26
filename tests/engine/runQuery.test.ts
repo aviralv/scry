@@ -255,4 +255,30 @@ describe('runQuery', () => {
     expect(events.find((e) => e.type === 'sources-finalized')).toBeUndefined();
     expect(events[events.length - 1].type).toBe('done');
   });
+
+  it('forwards resume option to the SDK queryFn when provided', async () => {
+    let capturedOptions: Record<string, unknown> | null = null;
+    const fakeQuery = ((args: { prompt: string; options: Record<string, unknown> }) => {
+      capturedOptions = args.options;
+      return (async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 'sess-resume' };
+        yield { type: 'result', subtype: 'success', session_id: 'sess-resume' };
+      })();
+    }) as never;
+
+    const events: RunQueryEvent[] = [];
+    for await (const e of runQuery({
+      prompt: 'follow-up',
+      config: baseConfig,
+      scryConfigDir: '/tmp/scry',
+      resume: 'prior-session-id',
+      queryFn: fakeQuery,
+    })) {
+      events.push(e);
+    }
+
+    expect(capturedOptions).not.toBeNull();
+    expect(capturedOptions!.resume).toBe('prior-session-id');
+    expect(events[0]).toMatchObject({ type: 'session-init' });
+  });
 });
