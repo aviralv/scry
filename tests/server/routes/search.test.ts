@@ -67,4 +67,33 @@ describe('POST /api/search', () => {
     expect(res.headers.get('Cache-Control')).toBe('no-cache');
     expect(res.headers.get('X-Accel-Buffering')).toBe('no');
   });
+
+  it('accepts sessionId in body for follow-up turns', async () => {
+    const app = createServer({ port: 6678 });
+    const res = await app.request('/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Scry-Csrf': getCsrfToken(),
+      },
+      body: JSON.stringify({ query: 'follow-up', sessionId: 'sess-prior-1' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/event-stream/);
+  });
+
+  it('rejects sessionId of wrong type', async () => {
+    const app = createServer({ port: 6678 });
+    const res = await app.request('/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Scry-Csrf': getCsrfToken(),
+      },
+      body: JSON.stringify({ query: 'q', sessionId: 123 }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid-body');
+  });
 });
