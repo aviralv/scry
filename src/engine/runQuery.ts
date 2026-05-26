@@ -32,6 +32,7 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   const systemPrompt = buildSystemPrompt({
     registry: opts.config.registry ?? { people: {}, projects: {} },
     fanoutMode: opts.fanoutMode ?? false,
+    serverNames: Object.keys(opts.config.mcp_servers),
   });
   const mcpServers = buildMcpServers(opts.config.mcp_servers);
 
