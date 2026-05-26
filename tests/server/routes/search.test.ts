@@ -1,6 +1,10 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { createServer } from '../../../src/server/index.js';
 import { generateCsrfToken, getCsrfToken } from '../../../src/server/middleware/csrf-token.js';
+import { SessionsStore } from '../../../src/storage/sessions.js';
 
 // Mock runQuery so test 4 doesn't spawn real MCP child processes.
 // The real config exists at ~/.config/scry/scry.config.yaml on this machine.
@@ -10,11 +14,24 @@ vi.mock('../../../src/engine/runQuery.js', () => ({
   },
 }));
 
+let dir: string;
+let store: SessionsStore;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'scry-search-test-'));
+  store = new SessionsStore(join(dir, 'scry.db'));
+});
+
+afterEach(() => {
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 describe('POST /api/search', () => {
   beforeAll(() => generateCsrfToken());
 
   it('rejects without CSRF header', async () => {
-    const app = createServer({ port: 6678 });
+    const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -24,7 +41,7 @@ describe('POST /api/search', () => {
   });
 
   it('rejects bad-origin', async () => {
-    const app = createServer({ port: 6678 });
+    const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
       headers: {
@@ -38,7 +55,7 @@ describe('POST /api/search', () => {
   });
 
   it('rejects malformed body', async () => {
-    const app = createServer({ port: 6678 });
+    const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
       headers: {
@@ -53,7 +70,7 @@ describe('POST /api/search', () => {
   });
 
   it('returns text/event-stream on valid POST', async () => {
-    const app = createServer({ port: 6678 });
+    const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
       headers: {
@@ -69,7 +86,7 @@ describe('POST /api/search', () => {
   });
 
   it('accepts sessionId in body for follow-up turns', async () => {
-    const app = createServer({ port: 6678 });
+    const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
       headers: {
@@ -83,7 +100,7 @@ describe('POST /api/search', () => {
   });
 
   it('rejects sessionId of wrong type', async () => {
-    const app = createServer({ port: 6678 });
+    const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
       headers: {
