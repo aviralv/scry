@@ -178,4 +178,81 @@ describe('runQuery', () => {
       expect(tr.source.snippet).toBe('from array form');
     }
   });
+
+  it('emits sources-finalized after final assistant text and before done', async () => {
+    const fakeQuery = async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-fin' };
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 't1', name: 'slack_search', input: {} }],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 't1',
+              content: JSON.stringify([{ title: 'Andre', snippet: 'x' }]),
+            },
+          ],
+        },
+      };
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'text',
+              text: 'Andre said X [1].\n\nSources:\n[1] Slack: Andre msg (https://slack.com/x)',
+            },
+          ],
+        },
+      };
+      yield { type: 'result', subtype: 'success', session_id: 'sess-fin' };
+    };
+
+    const events: RunQueryEvent[] = [];
+    for await (const e of runQuery({
+      prompt: 'q',
+      config: baseConfig,
+      scryConfigDir: '/tmp/scry',
+      queryFn: fakeQuery as never,
+    })) {
+      events.push(e);
+    }
+
+    const finalIdx = events.findIndex((e) => e.type === 'sources-finalized');
+    const doneIdx = events.findIndex((e) => e.type === 'done');
+    const lastTextIdx = events.map((e) => e.type).lastIndexOf('assistant-text');
+
+    expect(finalIdx).toBeGreaterThan(lastTextIdx);
+    expect(doneIdx).toBe(finalIdx + 1);
+
+    if (events[finalIdx].type === 'sources-finalized') {
+      expect(events[finalIdx].sources.length).toBe(1);
+      expect(events[finalIdx].sources[0].url).toBe('https://slack.com/x');
+    }
+  });
+
+  it('does NOT emit sources-finalized when answer has no Sources block', async () => {
+    const fakeQuery = async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-no-sources' };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'plain answer no enumeration' }] } };
+      yield { type: 'result', subtype: 'success', session_id: 'sess-no-sources' };
+    };
+    const events: RunQueryEvent[] = [];
+    for await (const e of runQuery({
+      prompt: 'q',
+      config: baseConfig,
+      scryConfigDir: '/tmp/scry',
+      queryFn: fakeQuery as never,
+    })) {
+      events.push(e);
+    }
+    expect(events.find((e) => e.type === 'sources-finalized')).toBeUndefined();
+    expect(events[events.length - 1].type).toBe('done');
+  });
 });

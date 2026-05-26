@@ -13,7 +13,10 @@ const OUTPUT_RULES = `Output rules:
 - If a tool returns no relevant results, say so explicitly rather than inventing content.
 - If two sources disagree, surface the disagreement.
 - Prioritize recent results when timestamps are available.
-- Keep the answer under 200 words unless the question demands more.`;
+- Keep the answer under 200 words unless the question demands more.
+- After your answer, emit a "Sources:" heading on its own line, then list each
+  cited source on its own line formatted: \`[N] <source-name>: <title> — <url-if-known>\`.
+  Use the same [N] indices you used inline. Use markdown link syntax for URLs.`;
 
 const FANOUT_DIRECTIVE = `Search-mode override: the user has activated fanout mode. Call ALL configured search tools in your first turn before producing any prose, then synthesize across the combined results.`;
 
