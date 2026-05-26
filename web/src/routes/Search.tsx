@@ -1,8 +1,9 @@
 // web/src/routes/Search.tsx
-import { useState, useRef, useCallback, type JSX } from 'react';
+import { useState, useRef, useCallback, useEffect, type JSX } from 'react';
 import type { RunQueryEvent, SourceCard } from '@shared/types.js';
 import { apiFetch } from '../lib/api.js';
 import { consumeStream } from '../lib/stream.js';
+import { getSession } from '../lib/sessions.js';
 import { SearchInput } from '../components/SearchInput.js';
 import { TurnBlock } from '../components/TurnBlock.js';
 
@@ -18,22 +19,83 @@ interface TurnData {
 
 type State =
   | { kind: 'empty' }
+  | { kind: 'loading' }
   | { kind: 'submitting'; turns: TurnData[]; sessionId?: string }
   | { kind: 'streaming'; turns: TurnData[]; sessionId?: string }
   | { kind: 'done'; turns: TurnData[]; sessionId: string }
   | { kind: 'error'; turns: TurnData[]; sessionId?: string; message: string }
   | { kind: 'aborted'; turns: TurnData[]; sessionId?: string };
 
+interface Props {
+  activeSessionId?: string;
+  onSessionStarted: (id: string) => void;
+  onSessionDone: () => void;
+}
+
 function newTurn(query: string): TurnData {
   return { query, cards: [], finalAnswer: '', finalized: false, activeTools: [] };
 }
 
-export function Search(): JSX.Element {
+export function Search({ activeSessionId, onSessionStarted, onSessionDone }: Props): JSX.Element {
   const [state, setState] = useState<State>({ kind: 'empty' });
   const abortRef = useRef<AbortController | null>(null);
+  const loadedIdRef = useRef<string | undefined>(undefined);
+  const ownSessionIdRef = useRef<string | undefined>(undefined);
+
+  // Mirror state.sessionId into a ref so the activeSessionId effect can read it
+  // without depending on `state` (which would re-fire on every state change
+  // during streaming).
+  useEffect(() => {
+    if (state.kind === 'done' || state.kind === 'aborted' || state.kind === 'error') {
+      ownSessionIdRef.current = 'sessionId' in state ? state.sessionId : undefined;
+    } else if (state.kind === 'streaming' || state.kind === 'submitting') {
+      ownSessionIdRef.current = state.sessionId;
+    } else if (state.kind === 'empty') {
+      ownSessionIdRef.current = undefined;
+    }
+  }, [state]);
+
+  // Load session from server when activeSessionId changes externally. Only
+  // depends on activeSessionId — guards via refs prevent re-entry on the
+  // setState calls inside.
+  useEffect(() => {
+    if (activeSessionId === undefined) {
+      // External "new search" — clear if we have an own session.
+      if (ownSessionIdRef.current !== undefined) {
+        abortRef.current?.abort();
+        setState({ kind: 'empty' });
+      }
+      loadedIdRef.current = undefined;
+      return;
+    }
+    // If activeSessionId matches our own current session, nothing to load.
+    if (ownSessionIdRef.current === activeSessionId) {
+      loadedIdRef.current = activeSessionId;
+      return;
+    }
+    if (loadedIdRef.current === activeSessionId) return;
+    loadedIdRef.current = activeSessionId;
+
+    abortRef.current?.abort();
+    setState({ kind: 'loading' });
+    void (async () => {
+      try {
+        const row = await getSession(activeSessionId);
+        const turns: TurnData[] = row.turns.map((t) => ({
+          query: t.query,
+          cards: t.cards,
+          finalAnswer: t.finalAnswer,
+          finalized: true,
+          activeTools: [],
+        }));
+        setState({ kind: 'done', turns, sessionId: row.id });
+      } catch (err) {
+        setState({ kind: 'error', turns: [], message: (err as Error).message ?? 'load failed' });
+      }
+    })();
+  }, [activeSessionId]);
 
   const handleSubmit = useCallback(async (query: string, fanoutMode: boolean) => {
-    // Capture current sessionId + turns before mutating state.
     const carrySession =
       state.kind === 'done' || state.kind === 'aborted' || state.kind === 'error'
         ? state.sessionId
@@ -66,8 +128,8 @@ export function Search(): JSX.Element {
     } catch (err) {
       setState((prev) => ({
         kind: 'error',
-        turns: prev.kind === 'empty' ? [] : prev.turns,
-        sessionId: prev.kind === 'empty' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
+        turns: prev.kind === 'empty' || prev.kind === 'loading' ? [] : prev.turns,
+        sessionId: prev.kind === 'empty' || prev.kind === 'loading' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
         message: (err as Error).message ?? 'fetch failed',
       }));
       return;
@@ -76,8 +138,8 @@ export function Search(): JSX.Element {
     if (!res.ok) {
       setState((prev) => ({
         kind: 'error',
-        turns: prev.kind === 'empty' ? [] : prev.turns,
-        sessionId: prev.kind === 'empty' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
+        turns: prev.kind === 'empty' || prev.kind === 'loading' ? [] : prev.turns,
+        sessionId: prev.kind === 'empty' || prev.kind === 'loading' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
         message: `HTTP ${res.status}`,
       }));
       return;
@@ -85,8 +147,8 @@ export function Search(): JSX.Element {
 
     setState((prev) => ({
       kind: 'streaming',
-      turns: prev.kind === 'empty' ? [newTurn(query)] : prev.turns,
-      sessionId: prev.kind === 'empty' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
+      turns: prev.kind === 'empty' || prev.kind === 'loading' ? [newTurn(query)] : prev.turns,
+      sessionId: prev.kind === 'empty' || prev.kind === 'loading' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
     }));
 
     await consumeStream<StreamEvent>(res, {
@@ -94,12 +156,12 @@ export function Search(): JSX.Element {
         if (event.type === 'keepalive') return;
         setState((prev) => {
           if (prev.kind !== 'streaming') return prev;
-          // Always mutate the LAST turn — that's the active one.
           const turns = [...prev.turns];
           const lastIdx = turns.length - 1;
           const last = turns[lastIdx];
           switch (event.type) {
             case 'session-init':
+              if (!prev.sessionId) onSessionStarted(event.sessionId);
               return { ...prev, sessionId: event.sessionId };
             case 'tool-call':
               turns[lastIdx] = { ...last, activeTools: [...last.activeTools, event.tool] };
@@ -124,6 +186,7 @@ export function Search(): JSX.Element {
                 finalAnswer: last.finalAnswer,
                 finalized: last.finalized,
               };
+              onSessionDone();
               return { kind: 'done', turns, sessionId: event.sessionId };
             case 'error':
               return { kind: 'error', turns: prev.turns, sessionId: prev.sessionId, message: event.message };
@@ -135,18 +198,13 @@ export function Search(): JSX.Element {
       onError: (err) => {
         setState((prev) => ({
           kind: 'error',
-          turns: prev.kind === 'empty' ? [] : prev.turns,
-          sessionId: prev.kind === 'empty' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
+          turns: prev.kind === 'empty' || prev.kind === 'loading' ? [] : prev.turns,
+          sessionId: prev.kind === 'empty' || prev.kind === 'loading' ? undefined : ('sessionId' in prev ? prev.sessionId : undefined),
           message: err.message ?? String(err),
         }));
       },
     }, ctl.signal);
-  }, [state]);
-
-  const handleNewSearch = () => {
-    abortRef.current?.abort();
-    setState({ kind: 'empty' });
-  };
+  }, [state, onSessionStarted, onSessionDone]);
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -157,18 +215,20 @@ export function Search(): JSX.Element {
     );
   };
 
-  const turns = state.kind === 'empty' ? [] : state.turns;
+  const turns = state.kind === 'empty' || state.kind === 'loading' ? [] : state.turns;
   const showInput =
     state.kind === 'empty' || state.kind === 'done' || state.kind === 'error' || state.kind === 'aborted';
   const showStop = state.kind === 'streaming';
-  const showNewSearchBtn = state.kind === 'done' || state.kind === 'aborted' || state.kind === 'error';
-  const showReloadNotice = turns.length > 1;
 
   return (
     <div className="search-page p-8 max-w-4xl mx-auto">
       <h1 className="text-2xl font-sans text-text-primary mb-6">
         <span className="text-accent">s</span>cry
       </h1>
+
+      {state.kind === 'loading' && (
+        <div className="text-text-tertiary text-sm">Loading session…</div>
+      )}
 
       {turns.map((t, i) => (
         <TurnBlock
@@ -199,8 +259,8 @@ export function Search(): JSX.Element {
         </div>
       )}
 
-      <div className="mt-4 flex gap-2">
-        {showStop && (
+      {showStop && (
+        <div className="mt-4">
           <button
             type="button"
             onClick={handleStop}
@@ -208,21 +268,6 @@ export function Search(): JSX.Element {
           >
             Stop
           </button>
-        )}
-        {showNewSearchBtn && (
-          <button
-            type="button"
-            onClick={handleNewSearch}
-            className="px-3 py-1 rounded border border-accent-dim text-accent hover:bg-bg-secondary text-sm"
-          >
-            New search
-          </button>
-        )}
-      </div>
-
-      {showReloadNotice && (
-        <div className="mt-8 text-text-tertiary text-xs italic">
-          ⓘ Reload loses state — Plan C3 adds persistence.
         </div>
       )}
     </div>
