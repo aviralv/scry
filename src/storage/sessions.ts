@@ -21,8 +21,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC, id DESC);
-PRAGMA user_version = 1;
 `;
+
+const CURRENT_SCHEMA_VERSION = 1;
 
 interface DbRow {
   id: string;
@@ -41,6 +42,13 @@ export class SessionsStore {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.exec(SCHEMA);
+    // Set user_version only on a fresh DB (default is 0). Don't unconditionally
+    // overwrite — a future migration would compare against this and could
+    // silently re-run if we always set it back to the current version here.
+    const current = this.db.pragma('user_version', { simple: true }) as number;
+    if (current === 0) {
+      this.db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
+    }
   }
 
   insert(s: InsertSession): void {
@@ -93,7 +101,7 @@ export class SessionsStore {
     return rows.map(toSessionRow);
   }
 
-  update(id: string, patch: UpdateSession): void {
+  update(id: string, patch: UpdateSession): number {
     const sets: string[] = ['updated_at = ?'];
     const values: Array<string | number> = [patch.updatedAt];
     if (patch.title !== undefined) {
@@ -105,11 +113,13 @@ export class SessionsStore {
       values.push(JSON.stringify(patch.turns));
     }
     values.push(id);
-    this.db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    const info = this.db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return info.changes;
   }
 
-  delete(id: string): void {
-    this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+  delete(id: string): number {
+    const info = this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+    return info.changes;
   }
 
   close(): void {

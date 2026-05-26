@@ -1,5 +1,5 @@
 // web/src/components/SessionRow.tsx
-import { useState, type JSX } from 'react';
+import { useState, useRef, type JSX } from 'react';
 import type { SessionRow as SessionRowData } from '@shared/types.js';
 
 interface Props {
@@ -14,14 +14,21 @@ export function SessionRow({ row, isActive, onSelect, onRename, onDelete }: Prop
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(row.title);
+  // Guard against double-fire: pressing Enter calls commitRename, which sets
+  // editing=false and triggers blur on the unmounting input → blur handler
+  // would call commitRename again. Ref check short-circuits the second call.
+  const committingRef = useRef(false);
 
   const startRename = () => {
     setMenuOpen(false);
     setDraft(row.title);
+    committingRef.current = false;
     setEditing(true);
   };
 
   const commitRename = async () => {
+    if (committingRef.current) return;
+    committingRef.current = true;
     setEditing(false);
     const trimmed = draft.trim();
     if (!trimmed || trimmed === row.title) return;

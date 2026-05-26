@@ -31,14 +31,16 @@ export function buildSessionsRoute(store: SessionsStore): Hono {
       const parsed = PatchSchema.safeParse(raw);
       if (!parsed.success) return c.json({ error: 'invalid-body', details: parsed.error.format() }, 400);
       const id = c.req.param('id');
-      if (!store.get(id)) return c.json({ error: 'not-found' }, 404);
-      store.update(id, { ...parsed.data, updatedAt: Date.now() });
+      // Single-write existence check: skip the pre-flight get() and rely on
+      // UPDATE's own rows-affected count. Avoids TOCTOU between get and update.
+      const changed = store.update(id, { ...parsed.data, updatedAt: Date.now() });
+      if (changed === 0) return c.json({ error: 'not-found' }, 404);
       return c.json({ ok: true });
     })
     .delete('/:id', (c) => {
       const id = c.req.param('id');
-      if (!store.get(id)) return c.json({ error: 'not-found' }, 404);
-      store.delete(id);
+      const changed = store.delete(id);
+      if (changed === 0) return c.json({ error: 'not-found' }, 404);
       return c.json({ ok: true });
     });
 }

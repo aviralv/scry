@@ -58,14 +58,22 @@ export function LibrarySidebar({ activeSessionId, refreshKey, onSelect, onNewSea
   }, [refresh, refreshKey]);
 
   const handleRename = useCallback(async (id: string, newTitle: string) => {
-    await patchSession(id, { title: newTitle });
-    await refresh();
+    try {
+      await patchSession(id, { title: newTitle });
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message ?? 'rename failed');
+    }
   }, [refresh]);
 
   const handleDelete = useCallback(async (id: string) => {
-    await deleteSession(id);
-    if (activeSessionId === id) onNewSearch();
-    await refresh();
+    try {
+      await deleteSession(id);
+      if (activeSessionId === id) onNewSearch();
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message ?? 'delete failed');
+    }
   }, [activeSessionId, onNewSearch, refresh]);
 
   if (collapsed) {
