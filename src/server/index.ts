@@ -6,12 +6,15 @@ import { originAllowlist } from './middleware/origin.js';
 import { csrfRequired } from './middleware/csrf.js';
 import { healthRoute } from './routes/health.js';
 import { csrfRoute } from './routes/csrf.js';
-import { searchRoute } from './routes/search.js';
+import { buildSearchRoute } from './routes/search.js';
+import { buildSessionsRoute } from './routes/sessions.js';
 import { staticHandler } from './static.js';
+import type { SessionsStore } from '../storage/sessions.js';
 
 export interface ServerOptions {
   port: number;
   staticDir?: string;
+  sessionsStore: SessionsStore;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,7 +28,8 @@ export function createServer(opts: ServerOptions) {
 
   app.route('/api/health', healthRoute);
   app.route('/api/csrf', csrfRoute);
-  app.route('/api/search', searchRoute);
+  app.route('/api/sessions', buildSessionsRoute(opts.sessionsStore));
+  app.route('/api/search', buildSearchRoute(opts.sessionsStore));
 
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
   app.use('*', staticHandler(staticDir));
