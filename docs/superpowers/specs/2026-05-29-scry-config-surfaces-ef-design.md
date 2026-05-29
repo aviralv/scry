@@ -355,7 +355,7 @@ E2E (deferred to Plan I): add an MCP via UI → row appears OK → search uses t
 
 - `/mcps`: add an MCP whose command resolves on PATH and exposes ≥1 tool → 201, row appears with status OK; running a search uses the new MCP.
 - `/mcps`: add an MCP with a hanging command → 422 within 5.5s; **scry's own PID is unaffected**; child PID is dead within 1s of the 422 (verified in test).
-- `/mcps`: env-value `${HOME}` in an entry that doesn't declare `HOME` as a key → resolver returns the entry's value verbatim (not the host `HOME`); `${SLACK_TOKEN}` in an entry that declares `SLACK_TOKEN` → resolved from `process.env`.
+- `/mcps`: env value `MY_TOKEN: "${HOME}"` (where `HOME` is *not* listed as a key in the same entry's `env` block) → resolver returns the literal string `"${HOME}"` (refuses to leak the host `HOME`). Env value `MY_TOKEN: "${SLACK_TOKEN}"` where the same entry declares `SLACK_TOKEN: "..."` (or where `SLACK_TOKEN` is in `allowedRefs` per project policy) → resolved from `process.env.SLACK_TOKEN`. The allowlist is the union of (a) keys the user listed in *this* entry's `env` block and (b) the explicit refs forwarded from `.scry.env` for the same MCP. No other refs resolve.
 - `/mcps`: DELETE on a missing name returns 204.
 - `/mcps`: POST without CSRF → 403. (Same for `/api/registry` PUT.)
 - `/registry`: edit a person, click Save → PUT 200, row's dirty dot clears; on disk the registry sub-tree reflects the edit; comments above and below the `registry:` block survive byte-for-byte (golden test).
