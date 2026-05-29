@@ -34,6 +34,7 @@ export interface Person {
   name: string;
   role?: string;
   teams?: string[];
+  aliases?: string[];
   identifiers: PersonIdentifiers;
   projects?: string[];
 }

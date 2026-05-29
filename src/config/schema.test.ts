@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { McpServerConfigSchema, RegistrySchema, PersonSchema, ProjectSchema } from './schema.js';
+import { McpServerConfigSchema, RegistrySchema, PersonSchema, ProjectSchema, McpServersMapSchema } from './schema.js';
 
 describe('McpServerConfigSchema', () => {
   it('accepts a minimal valid entry', () => {
@@ -98,6 +98,22 @@ describe('RegistrySchema', () => {
     const r = RegistrySchema.safeParse({
       people: { 'Andre Christ': { name: 'Andre', identifiers: {} } },
       projects: {},
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('McpServersMapSchema', () => {
+  it('accepts a slug-keyed entry', () => {
+    const r = McpServersMapSchema.safeParse({
+      slack: { command: 'slack-mcp' },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects non-slug keys', () => {
+    const r = McpServersMapSchema.safeParse({
+      'BAD KEY': { command: 'x' },
     });
     expect(r.success).toBe(false);
   });
