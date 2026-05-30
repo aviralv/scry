@@ -8,7 +8,7 @@ describe('healthCheck', () => {
   it('returns ok with toolCount on a healthy fixture', async () => {
     const r = await healthCheck({ command: 'node', args: [FX('mcp-fake-ok.mjs')] }, { timeoutMs: 3000 });
     expect(r.ok).toBe(true);
-    expect(r.toolCount).toBe(2);
+    if (r.ok) expect(r.toolCount).toBe(2);
   });
 
   it('returns ok=false with timeout error on a hanging fixture and the child is dead within 1s', async () => {
@@ -19,7 +19,7 @@ describe('healthCheck', () => {
     );
     const elapsed = Date.now() - before;
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/timeout|did not respond/i);
+    if (!r.ok) expect(r.error).toMatch(/timeout|did not respond/i);
     expect(elapsed).toBeLessThan(2500);
     // PID-check: any child that survives shows up in `ps -o pgid,pid,comm`. If
     // the helper exposed the spawned PID we'd assert on it; instead we verify
@@ -32,7 +32,7 @@ describe('healthCheck', () => {
       { timeoutMs: 1500 },
     );
     expect(r.ok).toBe(false);
-    expect(r.error).toBeTruthy();
+    if (!r.ok) expect(r.error).toBeTruthy();
   });
 
   it('passes only allowlisted env to the child (per-entry refs + PATH/HOME)', async () => {

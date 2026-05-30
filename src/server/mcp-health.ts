@@ -132,7 +132,7 @@ export async function healthCheck(server: McpServerConfig, opts: HealthCheckOpts
  * response with the given id arrives. Buffers across line boundaries.
  */
 function readJsonResponse(
-  child: import('child_process').ChildProcessByStdio<NodeJS.WritableStream, NodeJS.ReadableStream, NodeJS.ReadableStream>,
+  child: import('child_process').ChildProcessByStdio<import('stream').Writable, import('stream').Readable, import('stream').Readable>,
   id: number,
 ): Promise<{ result?: { tools?: { name: string }[] }; error?: unknown }> {
   return new Promise((resolveRead, rejectRead) => {
