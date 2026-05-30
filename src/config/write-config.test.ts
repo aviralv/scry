@@ -83,7 +83,11 @@ describe('writeConfig', () => {
     await Promise.all(writes);
     const raw = readFileSync(cfg, 'utf-8');
     expect(raw).toMatch(/cmd-[0-4]/);
-    // file is parseable YAML — no torn rename
-    expect(() => raw.split('\n')).not.toThrow();
+    // File is valid YAML after the lock-serialized writes — proves no
+    // partial-write artifacts (which atomicWriteConfig also guarantees on
+    // its own; this assertion catches regressions in either layer).
+    const { parse } = await import('yaml');
+    expect(() => parse(raw)).not.toThrow();
+    expect(parse(raw)).toBeTruthy();
   });
 });

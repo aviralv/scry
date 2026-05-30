@@ -59,10 +59,21 @@ export async function writeConfig(path: string, updates: WriteConfigUpdates): Pr
     throw new ConfigValidationError(issues);
   }
 
-  const release = await lockfile.lock(path, { stale: 10_000, retries: { retries: 5, minTimeout: 50 } });
+  const release = await lockfile.lock(path, {
+    stale: 10_000,
+    retries: { retries: 5, minTimeout: 50 },
+    onCompromised: (err: Error) => {
+      // Don't re-throw inside the timer — that's an unhandled exception.
+      // The next release() call will surface ENOTACQUIRED instead.
+      console.error(`[writeConfig] lock compromised on ${path}: ${err.message}`);
+    },
+  });
   try {
     const raw = await fs.readFile(path, 'utf-8');
     const doc = parseDocument(raw);
+    if (doc.errors.length > 0) {
+      throw new Error(`Config at ${path} contains YAML syntax errors: ${doc.errors[0].message}`);
+    }
 
     if (parsed.data.mcp_servers !== undefined) {
       doc.set('mcp_servers', parsed.data.mcp_servers);
