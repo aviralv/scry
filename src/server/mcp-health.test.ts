@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'path';
-import { healthCheck } from './mcp-health.js';
+import { healthCheck, resolveDeclaredEnv } from './mcp-health.js';
 
 const FX = (name: string) => resolve(process.cwd(), 'test-fixtures', name);
 
@@ -86,5 +86,49 @@ describe('healthCheck', () => {
     } finally {
       delete process.env.SCRY_TEST_FORBIDDEN;
     }
+  });
+
+  it('returns ok=false when the command does not exist (ENOENT) without crashing', async () => {
+    const r = await healthCheck(
+      { command: 'this-binary-definitely-does-not-exist-xyz-123', args: [] },
+      { timeoutMs: 1500 },
+    );
+    expect(r.ok).toBe(false);
+    expect((r as { ok: false; error: string }).error).toMatch(/ENOENT|not found|spawn/i);
+  });
+});
+
+describe('resolveDeclaredEnv', () => {
+  it('resolves a ref naming a key declared in the same entry', () => {
+    process.env.SCRY_TEST_DECLARED = 'resolved-value';
+    try {
+      const r = resolveDeclaredEnv({ SCRY_TEST_DECLARED: '${SCRY_TEST_DECLARED}' });
+      expect(r.SCRY_TEST_DECLARED).toBe('resolved-value');
+    } finally {
+      delete process.env.SCRY_TEST_DECLARED;
+    }
+  });
+
+  it('passes through a ref to a non-declared key as a literal (security boundary)', () => {
+    process.env.ACTUAL_SECRET = 'should-not-leak';
+    try {
+      const r = resolveDeclaredEnv({ TOKEN: '${ACTUAL_SECRET}' });
+      // ACTUAL_SECRET is NOT a declared key in this entry, so the ref
+      // does not resolve. This is the security boundary.
+      expect(r.TOKEN).toBe('${ACTUAL_SECRET}');
+      expect(r.TOKEN).not.toBe('should-not-leak');
+    } finally {
+      delete process.env.ACTUAL_SECRET;
+    }
+  });
+
+  it('passes safe-literal values through unchanged', () => {
+    const r = resolveDeclaredEnv({ BIN: '/usr/local/bin/x', NUM: '42' });
+    expect(r.BIN).toBe('/usr/local/bin/x');
+    expect(r.NUM).toBe('42');
+  });
+
+  it('returns an empty object for an empty input', () => {
+    expect(resolveDeclaredEnv({})).toEqual({});
   });
 });

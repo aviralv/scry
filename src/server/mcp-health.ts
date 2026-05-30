@@ -54,9 +54,22 @@ export async function healthCheck(server: McpServerConfig, opts: HealthCheckOpts
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
-  // Reject child.pid==null (rare; happens when spawn fails synchronously).
+  // Attach the error listener BEFORE checking pid. Node's spawn fires the
+  // error event asynchronously for ENOENT / EACCES; if we return early on
+  // pid == null without this listener, the error becomes uncaught and
+  // crashes the process.
+  const errorPromise = new Promise<HealthCheckResult>((resolveError) => {
+    child.once('error', (err) => {
+      // settle is not yet defined when pid == null (we return early below),
+      // so we resolve directly. No pgid to kill in that case anyway.
+      resolveError({ ok: false, error: err.message });
+    });
+  });
+
+  // If pid is undefined, spawn failed synchronously; the error event will
+  // fire on next tick and resolve errorPromise.
   if (child.pid == null) {
-    return { ok: false, error: 'failed to spawn child process' };
+    return errorPromise;
   }
   const pgid = child.pid;
 
@@ -80,10 +93,6 @@ export async function healthCheck(server: McpServerConfig, opts: HealthCheckOpts
     child.once('exit', (code, signal) => {
       if (settled) return;
       resolveExit(settle({ ok: false, error: `child exited (code=${code} signal=${signal}) ${stderr.trim()}`.trim() }));
-    });
-    child.once('error', (err) => {
-      if (settled) return;
-      resolveExit(settle({ ok: false, error: err.message }));
     });
   });
 
@@ -115,7 +124,7 @@ export async function healthCheck(server: McpServerConfig, opts: HealthCheckOpts
     }
   })();
 
-  return Promise.race([protocolPromise, exitPromise, timeoutPromise]);
+  return Promise.race([protocolPromise, exitPromise, errorPromise, timeoutPromise]);
 }
 
 /**
@@ -128,6 +137,11 @@ function readJsonResponse(
 ): Promise<{ result?: { tools?: { name: string }[] }; error?: unknown }> {
   return new Promise((resolveRead, rejectRead) => {
     let buf = '';
+    const cleanup = () => {
+      child.stdout.off('data', onData);
+      child.stdout.off('error', onError);
+      child.stdout.off('end', onEnd);
+    };
     const onData = (chunk: Buffer) => {
       buf += chunk.toString();
       let idx;
@@ -138,7 +152,7 @@ function readJsonResponse(
         try {
           const msg = JSON.parse(line);
           if (msg.id === id) {
-            child.stdout.off('data', onData);
+            cleanup();
             resolveRead(msg);
             return;
           }
@@ -147,7 +161,10 @@ function readJsonResponse(
         }
       }
     };
+    const onError = (err: Error) => { cleanup(); rejectRead(err); };
+    const onEnd = () => { cleanup(); rejectRead(new Error('stdout closed before id=' + id + ' arrived')); };
     child.stdout.on('data', onData);
-    child.stdout.once('error', rejectRead);
+    child.stdout.once('error', onError);
+    child.stdout.once('end', onEnd);
   });
 }
