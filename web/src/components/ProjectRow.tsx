@@ -7,6 +7,7 @@ interface Props {
   project: Project;
   dirty: boolean;
   errors: ApiErrorIssue[];
+  defaultExpanded?: boolean;
   onChange: (next: Project) => void;
   onDelete: () => void;
 }
@@ -15,8 +16,8 @@ function getError(errors: ApiErrorIssue[], ...path: string[]): string | undefine
   return errors.find((i) => path.every((seg, idx) => i.path[2 + idx] === seg))?.message;
 }
 
-export function ProjectRow({ entryKey, project, dirty, errors, onChange, onDelete }: Props): JSX.Element {
-  const [expanded, setExpanded] = useState(errors.length > 0);
+export function ProjectRow({ entryKey, project, dirty, errors, defaultExpanded, onChange, onDelete }: Props): JSX.Element {
+  const [expanded, setExpanded] = useState(errors.length > 0 || defaultExpanded === true);
 
   const update = (patch: Partial<Project>) => onChange({ ...project, ...patch });
   const updateRouting = (patch: Partial<Project['routing']>) =>

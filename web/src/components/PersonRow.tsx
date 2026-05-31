@@ -7,6 +7,7 @@ interface Props {
   person: Person;
   dirty: boolean;
   errors: ApiErrorIssue[];
+  defaultExpanded?: boolean;
   onChange: (next: Person) => void;
   onDelete: () => void;
 }
@@ -18,9 +19,10 @@ function getError(errors: ApiErrorIssue[], ...path: string[]): string | undefine
   return errors.find((i) => path.every((seg, idx) => i.path[2 + idx] === seg))?.message;
 }
 
-export function PersonRow({ entryKey, person, dirty, errors, onChange, onDelete }: Props): JSX.Element {
-  // Auto-expand when there are errors so the user can see the offending field.
-  const [expanded, setExpanded] = useState(errors.length > 0);
+export function PersonRow({ entryKey, person, dirty, errors, defaultExpanded, onChange, onDelete }: Props): JSX.Element {
+  // Auto-expand when there are errors so the user can see the offending field,
+  // or when the parent passes defaultExpanded=true (e.g. just-added rows).
+  const [expanded, setExpanded] = useState(errors.length > 0 || defaultExpanded === true);
 
   const update = (patch: Partial<Person>) => onChange({ ...person, ...patch });
   const updateIdent = (patch: Partial<Person['identifiers']>) =>

@@ -15,6 +15,8 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
   const [error, setError] = useState<string | null>(null);
 
   const title = group === 'people' ? 'Add Person' : 'Add Project';
+  const keyPlaceholder = group === 'people' ? 'andre-c' : 'ea';
+  const namePlaceholder = group === 'people' ? 'Andre Christ' : 'Enterprise Architecture';
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -46,7 +48,7 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
             value={key}
             onChange={(e) => setKey(e.target.value)}
             required
-            placeholder="andre-c"
+            placeholder={keyPlaceholder}
             className="bg-bg-elevated px-2 py-1 rounded font-mono"
           />
         </label>
@@ -57,7 +59,7 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            placeholder="Andre Christ"
+            placeholder={namePlaceholder}
             className="bg-bg-elevated px-2 py-1 rounded"
           />
         </label>

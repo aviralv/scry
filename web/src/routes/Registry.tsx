@@ -35,6 +35,10 @@ export function Registry(): JSX.Element {
   const [saveErrors, setSaveErrors] = useState<ApiErrorIssue[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<null | Tab>(null);
+  // Keys (e.g. 'people:jens-r') that should mount expanded — used so newly-added
+  // rows immediately reveal their email/aliases/teams fields rather than
+  // collapsing back to the summary view.
+  const [autoExpand, setAutoExpand] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -94,6 +98,7 @@ export function Registry(): JSX.Element {
     } else {
       setWorking({ ...working, projects: { ...working.projects, [key]: { name, routing: {} } } });
     }
+    setAutoExpand((prev) => new Set(prev).add(`${modal}:${key}`));
   };
 
   const handleSave = async () => {
@@ -207,6 +212,7 @@ export function Registry(): JSX.Element {
               person={working.people[k]}
               dirty={dirty.has(`people:${k}`)}
               errors={errorsForKey('people', k)}
+              defaultExpanded={autoExpand.has(`people:${k}`)}
               onChange={(next) => updatePerson(k, next)}
               onDelete={() => {
                 if (window.confirm(`Delete person "${k}"?`)) deletePerson(k);
@@ -224,6 +230,7 @@ export function Registry(): JSX.Element {
               project={working.projects[k]}
               dirty={dirty.has(`projects:${k}`)}
               errors={errorsForKey('projects', k)}
+              defaultExpanded={autoExpand.has(`projects:${k}`)}
               onChange={(next) => updateProject(k, next)}
               onDelete={() => {
                 if (window.confirm(`Delete project "${k}"?`)) deleteProject(k);
