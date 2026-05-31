@@ -8,7 +8,9 @@ import { healthRoute } from './routes/health.js';
 import { csrfRoute } from './routes/csrf.js';
 import { buildSearchRoute } from './routes/search.js';
 import { buildSessionsRoute } from './routes/sessions.js';
+import { buildMcpsRoute } from './routes/mcps.js';
 import { staticHandler } from './static.js';
+import { resolveConfigPath } from '../config/loader.js';
 import type { SessionsStore } from '../storage/sessions.js';
 
 export interface ServerOptions {
@@ -30,6 +32,7 @@ export function createServer(opts: ServerOptions) {
   app.route('/api/csrf', csrfRoute);
   app.route('/api/sessions', buildSessionsRoute(opts.sessionsStore));
   app.route('/api/search', buildSearchRoute(opts.sessionsStore));
+  app.route('/api/mcps', buildMcpsRoute({ configPath: () => resolveConfigPath() }));
 
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
   app.use('*', staticHandler(staticDir));

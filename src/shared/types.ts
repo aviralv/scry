@@ -14,3 +14,5 @@ export type ApiResult<T> =
 
 export type { SourceCard, Citation, RunQueryEvent } from '../engine/types.js';
 export type { SessionRow, StoredTurn } from '../storage/types.js';
+export type { ApiErrorBody, ApiErrorIssue } from './api-errors.js';
+export { zodToApiErrors } from './api-errors.js';;

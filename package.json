@@ -46,12 +46,14 @@
     "commander": "^13.1.0",
     "hono": "^4.12.22",
     "open": "^11.0.0",
+    "proper-lockfile": "^4.1.2",
     "yaml": "^2.7.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.19.19",
+    "@types/proper-lockfile": "^4.1.4",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"

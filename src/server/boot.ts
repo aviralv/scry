@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 import { createServer } from './index.js';
 import { generateCsrfToken } from './middleware/csrf-token.js';
 import { resolveConfigPath } from '../config/loader.js';
+import { loadDotEnvFile } from '../config/dotenv.js';
 import { SessionsStore } from '../storage/sessions.js';
 
 export interface BootOptions {
@@ -18,6 +19,13 @@ export interface BootOptions {
 export function startServer(opts: BootOptions): Promise<Server> {
   generateCsrfToken();
   const configDir = dirname(resolveConfigPath());
+
+  // Load .scry.env once at boot so health-check spawns can resolve declared
+  // ${REF} env values. runQuery loads it per-call too — idempotent so two
+  // loads cause no harm; what we cannot tolerate is *not* loading it before
+  // /api/mcps/:name/test runs.
+  loadDotEnvFile(join(configDir, '.scry.env'));
+
   const sessionsStore = new SessionsStore(join(configDir, 'scry.db'));
 
   // Close store cleanly on signal so WAL is checkpointed.

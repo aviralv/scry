@@ -1,5 +1,6 @@
 // web/src/components/LibrarySidebar.tsx
 import { useEffect, useState, useCallback, type JSX } from 'react';
+import { NavLink } from 'react-router-dom';
 import type { SessionRow as SessionRowData } from '@shared/types.js';
 import { listSessions, patchSession, deleteSession } from '../lib/sessions.js';
 import { SessionRow } from './SessionRow.js';
@@ -105,6 +106,25 @@ export function LibrarySidebar({ activeSessionId, refreshKey, onSelect, onNewSea
         >
           ‹
         </button>
+      </div>
+      <div className="px-2 pt-2 flex gap-2 text-xs">
+        <NavLink
+          to="/"
+          end
+          className={({ isActive }: { isActive: boolean }) =>
+            `px-2 py-1 rounded ${isActive ? 'bg-bg-elevated text-text-primary' : 'text-text-tertiary hover:text-text-primary'}`
+          }
+        >
+          Search
+        </NavLink>
+        <NavLink
+          to="/mcps"
+          className={({ isActive }: { isActive: boolean }) =>
+            `px-2 py-1 rounded ${isActive ? 'bg-bg-elevated text-text-primary' : 'text-text-tertiary hover:text-text-primary'}`
+          }
+        >
+          MCPs
+        </NavLink>
       </div>
       <button
         type="button"
