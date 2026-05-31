@@ -17,19 +17,44 @@ interface RouteDeps {
 
 const EMPTY_REGISTRY: Registry = { people: {}, projects: {} };
 
-function loadRegistry(configPath: string): Registry | null {
-  if (!existsSync(configPath)) return null;
+type LoadResult =
+  | { kind: 'ok'; registry: Registry }
+  | { kind: 'missing' }
+  | { kind: 'malformed'; detail: string };
+
+function loadRegistry(configPath: string): LoadResult {
+  if (!existsSync(configPath)) return { kind: 'missing' };
   const raw = readFileSync(configPath, 'utf-8');
-  const parsed = parse(raw) as { registry?: Registry } | undefined;
-  return parsed?.registry ?? EMPTY_REGISTRY;
+  let parsed: unknown;
+  try {
+    parsed = parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { kind: 'malformed', detail: `failed to parse YAML: ${msg}` };
+  }
+  if (parsed == null) return { kind: 'ok', registry: EMPTY_REGISTRY };
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { kind: 'malformed', detail: 'config root must be a YAML mapping' };
+  }
+  const block = (parsed as { registry?: unknown }).registry;
+  if (block === undefined) return { kind: 'ok', registry: EMPTY_REGISTRY };
+  const validated = RegistrySchema.safeParse(block);
+  if (!validated.success) {
+    const detail = zodToApiErrors(validated.error.issues)
+      .map(e => `${['registry', ...e.path].join('.')}: ${e.message}`)
+      .join('; ');
+    return { kind: 'malformed', detail: `registry block is invalid: ${detail}` };
+  }
+  return { kind: 'ok', registry: validated.data };
 }
 
 export function buildRegistryRoute(deps: RouteDeps): Hono {
   return new Hono()
     .get('/', (c) => {
-      const reg = loadRegistry(deps.configPath());
-      if (reg === null) return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
-      return c.json({ registry: reg });
+      const r = loadRegistry(deps.configPath());
+      if (r.kind === 'missing') return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
+      if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
+      return c.json({ registry: r.registry });
     })
     .put('/', async (c) => {
       const cfgPath = deps.configPath();
