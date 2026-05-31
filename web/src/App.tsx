@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { LibrarySidebar } from './components/LibrarySidebar.js';
 import { Search } from './routes/Search.js';
 import { McpManager } from './routes/McpManager.js';
+import { Registry } from './routes/Registry.js';
 
 export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
@@ -35,6 +36,7 @@ export default function App() {
               }
             />
             <Route path="/mcps" element={<McpManager />} />
+            <Route path="/registry" element={<Registry />} />
           </Routes>
         </main>
       </div>

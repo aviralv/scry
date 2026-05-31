@@ -125,6 +125,14 @@ export function LibrarySidebar({ activeSessionId, refreshKey, onSelect, onNewSea
         >
           MCPs
         </NavLink>
+        <NavLink
+          to="/registry"
+          className={({ isActive }: { isActive: boolean }) =>
+            `px-2 py-1 rounded ${isActive ? 'bg-bg-elevated text-text-primary' : 'text-text-tertiary hover:text-text-primary'}`
+          }
+        >
+          Registry
+        </NavLink>
       </div>
       <button
         type="button"
