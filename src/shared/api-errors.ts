@@ -11,6 +11,6 @@ export interface ApiErrorBody {
   errors?: ApiErrorIssue[];
 }
 
-export function zodToApiErrors(issues: { path: (string | number)[]; message: string }[]): ApiErrorIssue[] {
+export function zodToApiErrors(issues: { path: PropertyKey[]; message: string }[]): ApiErrorIssue[] {
   return issues.map((i) => ({ path: i.path.map(String), message: i.message }));
 }

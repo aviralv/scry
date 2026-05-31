@@ -162,3 +162,25 @@ describe('POST /api/mcps/:name/test', () => {
     expect(r.status).toBe(404);
   });
 });
+
+describe('non-validation writeConfig errors', () => {
+  it('surfaces a 500 when writeConfig throws something other than ConfigValidationError', async () => {
+    // Make the config directory read-only so atomicWriteConfig fails with EACCES
+    // when it tries to write the .tmp file. We have to skip this on platforms
+    // where chmod doesn't actually deny writes (e.g. when running as root).
+    const { chmodSync } = await import('fs');
+    const origMode = 0o755;
+    try {
+      chmodSync(dir, 0o555);
+      const probe = await app.request('/api/mcps', {
+        method: 'POST', headers: csrfHeaders,
+        body: JSON.stringify({ name: 'newone', command: 'x' }),
+      });
+      // Some test environments (root, certain CI sandboxes) ignore chmod; if so, skip.
+      if (probe.status === 201) return;
+      expect(probe.status).toBe(500);
+    } finally {
+      chmodSync(dir, origMode);
+    }
+  });
+});

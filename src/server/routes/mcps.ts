@@ -63,7 +63,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
       try { raw = await c.req.json(); } catch { return c.json({ error: 'invalid-body', message: 'malformed JSON' }, 400); }
       const parsed = PostBodySchema.safeParse(raw);
       if (!parsed.success) {
-        return c.json({ error: 'invalid-body', errors: zodToApiErrors(parsed.error.issues as { path: (string | number)[]; message: string }[]) }, 400);
+        return c.json({ error: 'invalid-body', errors: zodToApiErrors(parsed.error.issues) }, 400);
       }
       const { name, ...serverCfg } = parsed.data;
       if (servers[name]) return c.json({ error: 'name-exists', message: `MCP "${name}" already exists` }, 409);
@@ -94,7 +94,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
       try { raw = await c.req.json(); } catch { return c.json({ error: 'invalid-body', message: 'malformed JSON' }, 400); }
       const parsed = PatchBodySchema.safeParse(raw);
       if (!parsed.success) {
-        return c.json({ error: 'invalid-body', errors: zodToApiErrors(parsed.error.issues as { path: (string | number)[]; message: string }[]) }, 400);
+        return c.json({ error: 'invalid-body', errors: zodToApiErrors(parsed.error.issues) }, 400);
       }
       const merged: McpServerConfig = { ...existing, ...parsed.data };
 
