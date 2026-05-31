@@ -42,7 +42,7 @@ export function PersonRow({ entryKey, person, dirty, errors, onChange, onDelete 
         <span className="font-mono text-xs text-text-tertiary w-32 shrink-0">{entryKey}</span>
         <span className="text-text-primary text-sm flex-1">{person.name}</span>
         {summary && <span className="text-text-tertiary text-xs">{summary}</span>}
-        {dirty && <span aria-label="dirty" className="w-2 h-2 bg-accent rounded-full" />}
+        {dirty && <span aria-hidden="true" className="w-2 h-2 bg-accent rounded-full" />}
         <button
           type="button"
           onClick={onDelete}

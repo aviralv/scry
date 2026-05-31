@@ -41,7 +41,7 @@ export function ProjectRow({ entryKey, project, dirty, errors, onChange, onDelet
         <span className="font-mono text-xs text-text-tertiary w-32 shrink-0">{entryKey}</span>
         <span className="text-text-primary text-sm flex-1">{project.name}</span>
         {summary && <span className="text-text-tertiary text-xs font-mono">{summary}</span>}
-        {dirty && <span aria-label="dirty" className="w-2 h-2 bg-accent rounded-full" />}
+        {dirty && <span aria-hidden="true" className="w-2 h-2 bg-accent rounded-full" />}
         <button
           type="button"
           onClick={onDelete}
