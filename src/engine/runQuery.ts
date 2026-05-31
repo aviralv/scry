@@ -160,6 +160,7 @@ function buildMcpServers(
 ): Record<string, { command: string; args?: string[]; env?: Record<string, string> }> {
   const out: Record<string, { command: string; args?: string[]; env?: Record<string, string> }> = {};
   for (const [name, cfg] of Object.entries(servers)) {
+    if (cfg.enabled === false) continue;
     out[name] = {
       command: cfg.command,
       args: cfg.args,

@@ -281,4 +281,38 @@ describe('runQuery', () => {
     expect(capturedOptions!.resume).toBe('prior-session-id');
     expect(events[0]).toMatchObject({ type: 'session-init' });
   });
+
+  it('omits mcp_servers with enabled === false from the SDK call', async () => {
+    let capturedMcpServers: Record<string, unknown> | null = null;
+    const fakeQuery = ((args: { prompt: string; options: { mcpServers: Record<string, unknown> } }) => {
+      capturedMcpServers = args.options.mcpServers;
+      return (async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 'sess-x' };
+        yield { type: 'result', subtype: 'success', session_id: 'sess-x' };
+      })();
+    });
+
+    const config: ScryConfig = {
+      ...baseConfig,
+      mcp_servers: {
+        keep: { command: 'a' },
+        drop: { command: 'b', enabled: false },
+        explicit_keep: { command: 'c', enabled: true },
+      },
+    };
+
+    await collect(
+      runQuery({
+        prompt: 'q',
+        config,
+        scryConfigDir: '/tmp/scry',
+        queryFn: fakeQuery as never,
+      }),
+    );
+
+    expect(capturedMcpServers).not.toBeNull();
+    expect(capturedMcpServers!).toHaveProperty('keep');
+    expect(capturedMcpServers!).toHaveProperty('explicit_keep');
+    expect(capturedMcpServers!).not.toHaveProperty('drop');
+  });
 });
