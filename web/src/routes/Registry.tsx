@@ -100,6 +100,7 @@ export function Registry(): JSX.Element {
     if (!working) return;
     setSaving(true);
     setSaveErrors(null);
+    setLoadError(null);
     try {
       const saved = await putRegistry(working);
       setServer(saved);
