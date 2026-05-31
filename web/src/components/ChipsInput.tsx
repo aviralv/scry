@@ -6,9 +6,11 @@ interface Props {
   onChange: (next: string[]) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** Visually hide the label (keep it in the DOM for screen readers). */
+  hideLabel?: boolean;
 }
 
-export function ChipsInput({ label, values, onChange, placeholder, disabled }: Props): JSX.Element {
+export function ChipsInput({ label, values, onChange, placeholder, disabled, hideLabel }: Props): JSX.Element {
   const id = useId();
   const [draft, setDraft] = useState('');
 
@@ -39,7 +41,7 @@ export function ChipsInput({ label, values, onChange, placeholder, disabled }: P
 
   return (
     <div className="flex flex-col gap-1 text-sm">
-      <label htmlFor={id} className="text-text-tertiary text-xs">{label}</label>
+      <label htmlFor={id} className={hideLabel ? 'sr-only' : 'text-text-tertiary text-xs'}>{label}</label>
       <div className="flex flex-wrap gap-1 items-center bg-bg-elevated px-2 py-1 rounded">
         {values.map((v, i) => (
           <span key={`${v}-${i}`} className="bg-bg-secondary text-text-primary px-2 py-0.5 rounded text-xs flex items-center gap-1">

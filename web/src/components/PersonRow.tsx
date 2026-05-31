@@ -81,6 +81,7 @@ export function PersonRow({ entryKey, person, dirty, errors, defaultExpanded, on
             values={person.teams ?? []}
             onChange={(v) => update({ teams: v.length ? v : undefined })}
             placeholder="Enter…"
+            hideLabel
           />
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">

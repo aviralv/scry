@@ -75,6 +75,7 @@ export function ProjectRow({ entryKey, project, dirty, errors, defaultExpanded, 
             values={project.aliases ?? []}
             onChange={(v) => update({ aliases: v.length ? v : undefined })}
             placeholder="Enter…"
+            hideLabel
           />
         </td>
         <td className="px-3 py-2 w-[22%]">
@@ -83,6 +84,7 @@ export function ProjectRow({ entryKey, project, dirty, errors, defaultExpanded, 
             values={project.routing?.slack_channels ?? []}
             onChange={(v) => updateRouting({ slack_channels: v.length ? v : undefined })}
             placeholder="#channel"
+            hideLabel
           />
         </td>
         <td className="px-3 py-2">
@@ -91,6 +93,7 @@ export function ProjectRow({ entryKey, project, dirty, errors, defaultExpanded, 
             values={project.people ?? []}
             onChange={(v) => update({ people: v.length ? v : undefined })}
             placeholder="Enter…"
+            hideLabel
           />
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
