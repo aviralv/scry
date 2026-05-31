@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
-import { McpServerConfigSchema } from '../../config/schema.js';
+import { McpServerConfigSchema, McpServersMapSchema } from '../../config/schema.js';
 import { writeConfig, ConfigValidationError } from '../../config/write-config.js';
 import { healthCheck as realHealthCheck, type HealthCheckResult } from '../mcp-health.js';
 import type { McpServerConfig } from '../../config/types.js';
@@ -32,11 +32,35 @@ interface McpServerEntry {
   enabled: boolean;
 }
 
-function loadServers(configPath: string): Record<string, McpServerConfig> | null {
-  if (!existsSync(configPath)) return null;
+type LoadResult =
+  | { kind: 'ok'; servers: Record<string, McpServerConfig> }
+  | { kind: 'missing' }
+  | { kind: 'malformed'; detail: string };
+
+function loadServers(configPath: string): LoadResult {
+  if (!existsSync(configPath)) return { kind: 'missing' };
   const raw = readFileSync(configPath, 'utf-8');
-  const parsed = parse(raw) as { mcp_servers?: Record<string, McpServerConfig> } | undefined;
-  return parsed?.mcp_servers ?? {};
+  let parsed: unknown;
+  try {
+    parsed = parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { kind: 'malformed', detail: `failed to parse YAML: ${msg}` };
+  }
+  if (parsed == null) return { kind: 'ok', servers: {} };
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { kind: 'malformed', detail: 'config root must be a YAML mapping' };
+  }
+  const block = (parsed as { mcp_servers?: unknown }).mcp_servers;
+  if (block === undefined) return { kind: 'ok', servers: {} };
+  const validated = McpServersMapSchema.safeParse(block);
+  if (!validated.success) {
+    const detail = zodToApiErrors(validated.error.issues)
+      .map(e => `${['mcp_servers', ...e.path].join('.')}: ${e.message}`)
+      .join('; ');
+    return { kind: 'malformed', detail: `mcp_servers block is invalid: ${detail}` };
+  }
+  return { kind: 'ok', servers: validated.data };
 }
 
 function toEntry(name: string, cfg: McpServerConfig): McpServerEntry {
@@ -48,16 +72,19 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
 
   return new Hono()
     .get('/', (c) => {
-      const servers = loadServers(deps.configPath());
-      if (servers === null) return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
-      const entries = Object.entries(servers).map(([n, s]) => toEntry(n, s));
+      const r = loadServers(deps.configPath());
+      if (r.kind === 'missing') return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
+      if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
+      const entries = Object.entries(r.servers).map(([n, s]) => toEntry(n, s));
       return c.json({ servers: entries });
     })
 
     .post('/', async (c) => {
       const cfgPath = deps.configPath();
-      const servers = loadServers(cfgPath);
-      if (servers === null) return c.json({ error: 'config-required' }, 412);
+      const r = loadServers(cfgPath);
+      if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
+      if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
+      const servers = r.servers;
 
       let raw: unknown;
       try { raw = await c.req.json(); } catch { return c.json({ error: 'invalid-body', message: 'malformed JSON' }, 400); }
@@ -84,8 +111,10 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
 
     .patch('/:name', async (c) => {
       const cfgPath = deps.configPath();
-      const servers = loadServers(cfgPath);
-      if (servers === null) return c.json({ error: 'config-required' }, 412);
+      const r = loadServers(cfgPath);
+      if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
+      if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
+      const servers = r.servers;
       const name = c.req.param('name');
       const existing = servers[name];
       if (!existing) return c.json({ error: 'not-found' }, 404);
@@ -112,8 +141,10 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
 
     .delete('/:name', async (c) => {
       const cfgPath = deps.configPath();
-      const servers = loadServers(cfgPath);
-      if (servers === null) return c.json({ error: 'config-required' }, 412);
+      const r = loadServers(cfgPath);
+      if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
+      if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
+      const servers = r.servers;
       const name = c.req.param('name');
       // Idempotent: 204 even if missing.
       if (!servers[name]) return c.body(null, 204);
@@ -130,10 +161,11 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
 
     .post('/:name/test', async (c) => {
       const cfgPath = deps.configPath();
-      const servers = loadServers(cfgPath);
-      if (servers === null) return c.json({ error: 'config-required' }, 412);
+      const r = loadServers(cfgPath);
+      if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
+      if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
       const name = c.req.param('name');
-      const existing = servers[name];
+      const existing = r.servers[name];
       if (!existing) return c.json({ error: 'not-found' }, 404);
       const hc = await healthCheck(existing);
       return c.json(hc);

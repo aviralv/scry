@@ -67,6 +67,25 @@ describe('GET /api/registry', () => {
     expect(body.registry.people.andre.name).toBe('Andre Christ');
     expect(body.registry.projects.ea.routing.slack_channels).toEqual(['#ea']);
   });
+
+  it('returns 500 with config-malformed when YAML is unparseable', async () => {
+    writeFileSync(cfg, 'registry:\n  people:\n    andre:\n      name: "broken\n');
+    const r = await app.request('/api/registry');
+    expect(r.status).toBe(500);
+    const body = await r.json();
+    expect(body.error).toBe('config-malformed');
+    expect(body.message).toContain('failed to parse YAML');
+  });
+
+  it('returns 500 with config-malformed when registry shape is invalid', async () => {
+    // A person without `name` fails the schema.
+    writeFileSync(cfg, 'registry:\n  people:\n    andre:\n      role: PM\n  projects: {}\n');
+    const r = await app.request('/api/registry');
+    expect(r.status).toBe(500);
+    const body = await r.json();
+    expect(body.error).toBe('config-malformed');
+    expect(body.message).toContain('registry');
+  });
 });
 
 describe('PUT /api/registry', () => {

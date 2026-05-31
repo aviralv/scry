@@ -46,6 +46,26 @@ describe('GET /api/mcps', () => {
     const body = await r.json();
     expect(body.error).toBe('config-required');
   });
+
+  it('returns 500 with config-malformed when YAML is unparseable', async () => {
+    // Unbalanced quote — yaml parser throws.
+    writeFileSync(cfg, 'mcp_servers:\n  slack:\n    command: "broken\n');
+    const r = await app.request('/api/mcps');
+    expect(r.status).toBe(500);
+    const body = await r.json();
+    expect(body.error).toBe('config-malformed');
+    expect(body.message).toContain('failed to parse YAML');
+  });
+
+  it('returns 500 with config-malformed when mcp_servers entry has wrong shape', async () => {
+    // command must be a string ≥ 1 char; null fails the schema.
+    writeFileSync(cfg, 'mcp_servers:\n  slack:\n    command: null\n');
+    const r = await app.request('/api/mcps');
+    expect(r.status).toBe(500);
+    const body = await r.json();
+    expect(body.error).toBe('config-malformed');
+    expect(body.message).toContain('mcp_servers');
+  });
 });
 
 describe('POST /api/mcps', () => {
