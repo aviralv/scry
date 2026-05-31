@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { buildMcpsRoute } from './mcps.js';
@@ -54,7 +54,7 @@ describe('GET /api/mcps', () => {
     expect(r.status).toBe(500);
     const body = await r.json();
     expect(body.error).toBe('config-malformed');
-    expect(body.message).toContain('failed to parse YAML');
+    expect(body.message).toContain('failed to read or parse config');
   });
 
   it('returns 500 with config-malformed when mcp_servers entry has wrong shape', async () => {
@@ -65,6 +65,23 @@ describe('GET /api/mcps', () => {
     const body = await r.json();
     expect(body.error).toBe('config-malformed');
     expect(body.message).toContain('mcp_servers');
+  });
+
+  // Skip when running as root (chmod doesn't enforce on root). On Linux/macOS
+  // CI this is fine; harmless to skip locally as root.
+  const skipIfRoot = process.getuid && process.getuid() === 0 ? it.skip : it;
+  skipIfRoot('returns 500 with config-malformed when config file is unreadable', async () => {
+    chmodSync(cfg, 0o000);
+    try {
+      const r = await app.request('/api/mcps');
+      expect(r.status).toBe(500);
+      const body = await r.json();
+      expect(body.error).toBe('config-malformed');
+      expect(body.message).toContain('failed to read or parse config');
+    } finally {
+      // Restore so afterEach's rmSync can clean up.
+      chmodSync(cfg, 0o644);
+    }
   });
 });
 

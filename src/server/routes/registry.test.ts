@@ -74,7 +74,7 @@ describe('GET /api/registry', () => {
     expect(r.status).toBe(500);
     const body = await r.json();
     expect(body.error).toBe('config-malformed');
-    expect(body.message).toContain('failed to parse YAML');
+    expect(body.message).toContain('failed to read or parse config');
   });
 
   it('returns 500 with config-malformed when registry shape is invalid', async () => {
@@ -85,6 +85,23 @@ describe('GET /api/registry', () => {
     const body = await r.json();
     expect(body.error).toBe('config-malformed');
     expect(body.message).toContain('registry');
+  });
+
+  it('accepts an empty registry block (sub-keys default to {})', async () => {
+    writeFileSync(cfg, 'registry: {}\n');
+    const r = await app.request('/api/registry');
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.registry).toEqual({ people: {}, projects: {} });
+  });
+
+  it('accepts a registry with only people defined (projects defaults to {})', async () => {
+    writeFileSync(cfg, 'registry:\n  people:\n    andre:\n      name: Andre\n      identifiers: {}\n');
+    const r = await app.request('/api/registry');
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.registry.projects).toEqual({});
+    expect(body.registry.people.andre.name).toBe('Andre');
   });
 });
 

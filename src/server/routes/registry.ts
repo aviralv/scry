@@ -24,13 +24,13 @@ type LoadResult =
 
 function loadRegistry(configPath: string): LoadResult {
   if (!existsSync(configPath)) return { kind: 'missing' };
-  const raw = readFileSync(configPath, 'utf-8');
   let parsed: unknown;
   try {
+    const raw = readFileSync(configPath, 'utf-8');
     parsed = parse(raw);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { kind: 'malformed', detail: `failed to parse YAML: ${msg}` };
+    return { kind: 'malformed', detail: `failed to read or parse config: ${msg}` };
   }
   if (parsed == null) return { kind: 'ok', registry: EMPTY_REGISTRY };
   if (typeof parsed !== 'object' || Array.isArray(parsed)) {
