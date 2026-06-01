@@ -101,6 +101,23 @@ describe('RegistrySchema', () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it('accepts an empty registry block — both sub-keys default to {}', () => {
+    const r = RegistrySchema.safeParse({});
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.people).toEqual({});
+      expect(r.data.projects).toEqual({});
+    }
+  });
+
+  it('accepts a registry with only people — projects defaults to {}', () => {
+    const r = RegistrySchema.safeParse({
+      people: { 'andre-c': { name: 'Andre', identifiers: {} } },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.projects).toEqual({});
+  });
 });
 
 describe('McpServersMapSchema', () => {

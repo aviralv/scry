@@ -37,8 +37,8 @@ export const ProjectSchema = z.object({
 });
 
 export const RegistrySchema = z.object({
-  people: z.record(z.string().regex(SLUG_RE), PersonSchema),
-  projects: z.record(z.string().regex(SLUG_RE), ProjectSchema),
+  people: z.record(z.string().regex(SLUG_RE), PersonSchema).default({}),
+  projects: z.record(z.string().regex(SLUG_RE), ProjectSchema).default({}),
 });
 
 export const McpServersMapSchema = z.record(z.string().regex(SLUG_RE), McpServerConfigSchema);

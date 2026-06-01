@@ -18,7 +18,12 @@ export interface BootOptions {
  */
 export function startServer(opts: BootOptions): Promise<Server> {
   generateCsrfToken();
-  const configDir = dirname(resolveConfigPath());
+  const configPath = resolveConfigPath();
+  // Log the resolved config path so a stale cwd-precedence config doesn't
+  // silently shadow the XDG config without anyone noticing. Caught in the
+  // wild during Plan E smoke; logging closes the surprise window.
+  console.log(`scry: config = ${configPath}`);
+  const configDir = dirname(configPath);
 
   // Load .scry.env once at boot so health-check spawns can resolve declared
   // ${REF} env values. runQuery loads it per-call too — idempotent so two
