@@ -3,7 +3,7 @@
 **Date:** 2026-06-02
 **Status:** Draft, pending user approval
 **Builds on:** Plans E (MCP manager) + F (Registry editor) merged on `main`
-**Reviewed by:** Claude (author); pending GPT-5 + Gemini 2.5 Pro adversarial pass.
+**Reviewed by:** Claude (author); GPT-4.1 + Gemini 2.5 Pro adversarial pass (GPT-5 timed out, fell back to GPT-4.1 — same fallback used on Plans C/E and PR #14). Findings triaged; spec revised. See "Dismissed reviewer points" at the bottom.
 
 ---
 
@@ -28,6 +28,7 @@ A single browser surface that takes a brand-new scry user from "first launch" to
 
 - New `web/src/components/RequireOnboarding.tsx` wraps `/`, `/mcps`, `/registry` routes in `App.tsx`.
 - On mount, calls `GET /api/onboarding` once. If `completed: false` → renders `<Navigate to="/onboarding" />`. Else renders children.
+- **Refreshes onboarding state on `document.visibilitychange`** (tab regains focus) so a wizard completed in another tab doesn't leave this tab redirecting forever. Implementation: a small `useEffect` listener that re-runs the GET when `document.visibilityState === 'visible'`. Lightweight; no library.
 - 412 from any of the wrapped routes also redirects (handled inside the route's existing 412 path — replaces "Run scry through onboarding first" copy with auto-navigation).
 - Navigating directly to `/onboarding` is allowed regardless of completion state (re-entry path).
 
@@ -64,12 +65,13 @@ Two-pane: 240px left rail, full-width content right of it.
 
 1. Client calls `POST /api/llm/test` with the proposed `{ base_url, auth_token?, model }`.
 2. Server runs a 1-token completion against the configured endpoint (single fixed prompt: "ok"). Timeout 5s. Returns `{ ok: true, model: <echoed> }` or `{ ok: false, error: <human-readable> }`.
-3. On `ok: true`: client calls `PUT /api/llm` with the same body. Server validates with `LlmConfigSchema`, writes `llm:` block via `writeConfig`. If `auth_token` is present and **does NOT match** `^\$\{[A-Z][A-Z0-9_]*\}$`, also writes `SCRY_LLM_TOKEN=<value>` to `.scry.env` (overwriting any previous value silently — the wizard owns this key) and rewrites the auth_token in config to `${SCRY_LLM_TOKEN}`. Returns 200; client advances to Step 2.
+3. On `ok: true`: client calls `PUT /api/llm` with the same body. Server validates with `LlmConfigSchema` (including SSRF allowlist on `base_url`). If `auth_token` is present and **does NOT match** `^\$\{[A-Z][A-Z0-9_]*\}$`, server uses the new `writeConfigAndEnv` helper (see "Two-phase write" below) to atomically write both `.scry.env` (`SCRY_LLM_TOKEN=<value>`, overwriting any previous value silently — the wizard owns this key) and the `llm:` block in config (with `auth_token` rewritten to `${SCRY_LLM_TOKEN}`). Otherwise (token is already a `${REF}` shape, or no token), only the config write happens. Both paths also clear `onboarding.llm_skipped` if it was set. Returns 200; client advances to Step 2.
 4. On `ok: false`: red banner under the form. Two affordances: "Retry" (re-runs the test) and "Skip — searches will fail until fixed" (POST `/api/onboarding/skip` with `{ step: 'llm' }` → writes `onboarding.llm_skipped: true`, advances to Step 2).
 
 ### Validation rules
 
 - `base_url` must be a valid URL (`z.string().url()`).
+- `base_url` is checked against an **SSRF allowlist** before any outbound call: scheme must be `https://` OR `http://localhost`/`http://127.0.0.1` (with optional `:port`). Any other scheme (`file://`, `ftp://`, etc.), any RFC1918 address (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), any link-local (`169.254.0.0/16`), and any IPv6 unique-local / link-local is rejected with 400. The localhost carve-out exists for legitimate proxy users (e.g. `http://localhost:6655/anthropic/`); without the carve-out, proxy users couldn't onboard. The check happens in both `PUT /api/llm` (write-time validation) and `POST /api/llm/test` (test-time validation) so a malicious page can't smuggle an internal-IP base_url through one path and exploit it through the other.
 - `model` must be ≥ 1 char.
 - `auth_token` is optional; if present, must match `${REF}` shape OR a "safe literal" (alnum + `-_=:./@+`) — same rules as Plan E env values, encoded in the existing schema regex.
 
@@ -90,14 +92,18 @@ Single-column vertical stack of cards. Each bundled MCP renders one card showing
 - If picked: env block expands inline — one input per entry in `bundled.envVars[]`, label = the var name (`SLACK_TOKEN`, `MS365_CLIENT_ID`, etc.), input prefilled if the same key already exists in `.scry.env` (read via `GET /api/onboarding`'s `detectedEnvKeys` field).
 - If not on PATH and not picked: a boxed monospace install hint underneath: `uv tool install git+<githubUrl>`. Picking the card surfaces a warning that health-check will fail until installation completes.
 
-Below the bundled cards: a dashed "+ Add custom MCP" tile. Clicking opens the existing `McpAddModal` from Plan E (no new component). On modal save, the custom MCP is added to the wizard's working list — it shows up as another picked card above with its env block expanded.
+Below the bundled cards: a dashed "+ Add custom MCP" tile. Clicking opens the existing `McpAddModal` from Plan E with a wizard-context flag. The modal:
+
+- In manager mode (Plan E behavior): does its own `POST /api/mcps`, closes on success.
+- In **wizard mode** (new): does NOT call `POST /api/mcps` itself. Instead, it accepts an `onSubmit(serverData)` callback from the wizard. On submit, the modal calls `onSubmit({ name, command, args, env })` (with the env block as the user typed it) and the wizard treats this as "add a custom card to the picked list," with the same env-input UX as bundled cards. The wizard's "Test & Continue" then handles the actual write via `POST /api/onboarding/mcps`. This avoids double-writes, double health-checks, and stale state between modal close and wizard refresh.
+
+The `McpAddModal` change is one new prop: `onSubmit?: (data: McpServerData) => void`. When set, the modal short-circuits its internal POST. Backward compatible — existing manager-surface callers don't pass `onSubmit` and get the old behavior.
 
 ### Test & Continue
 
-1. For each picked card, client calls `POST /api/mcps` (existing endpoint from Plan E) with `{ name, command, args?, env: { VAR_NAME: "${VAR_NAME}" } }` — the env block is constructed formulaically from `envVars[]`. Plan E's POST already runs `healthCheck` before write; failures bubble up as 422.
-2. For each `${VAR_NAME}` entry, the wizard ALSO calls a new `PUT /api/onboarding/env` with `{ keys: { VAR_NAME: <user-entered-value> } }` — server merges into `.scry.env` via `writeDotEnv`.
-3. Order: `.scry.env` write FIRST, then `POST /api/mcps` (so health-check spawns can resolve `${REF}` against the just-written `.scry.env`).
-4. Each card runs in parallel via `Promise.allSettled`. Per-card spinner during.
+1. For each picked card, client calls a new wizard-only endpoint `POST /api/onboarding/mcps` with `{ name, command, args?, envValues: { VAR_NAME: <user-entered-value> } }`. The server constructs the env block formulaically from `bundled-servers.ts` (or, for custom MCPs, from the modal-provided env block), runs `healthCheck`, and on success uses `writeConfigAndEnv` to atomically write both the env values to `.scry.env` and the new `mcp_servers.<name>` entry (with `env: { VAR_NAME: "${VAR_NAME}" }`) to config. Also clears `onboarding.mcps_skipped` if set.
+2. Each card runs in parallel via `Promise.allSettled`. The two-phase write inside each call serializes via the file lock — N picked cards means N atomic writes, in arbitrary order, each one all-or-nothing. Per-card spinner during.
+3. Plan E's existing `POST /api/mcps` (which takes a fully-formed env block in the body) stays as-is for the manager surface. The wizard uses its own endpoint because the env-block construction is wizard-specific and the env values need to flow to `.scry.env` atomically.
 
 ### Failure handling
 
@@ -128,19 +134,27 @@ Re-entry (direct nav to `/onboarding` after completion): lands on Step 3, every 
 ```
 GET    /api/onboarding              → 200 { llm, mcps, onboarding, detectedRefs, detectedEnvKeys }
                                        | 412 config-required
+                                       PURE READ — no side effects.
 POST   /api/onboarding/complete     → 200 { completed: true } | 412
 POST   /api/onboarding/skip         body: { step: 'llm' | 'mcps' }
                                      → 200 { onboarding } | 400 | 412
-PUT    /api/onboarding/env          body: { keys: Record<string, string> }
-                                     → 200 { keysWritten: string[] } | 400 | 412
+POST   /api/onboarding/mcps         body: { name, command, args?, envValues }
+                                     → 201 { server } | 400 | 409 name-exists
+                                       | 422 health-check-failed | 412
+                                     Wizard-only. Constructs env block from envValues,
+                                     runs health-check, atomically writes config + .scry.env,
+                                     clears mcps_skipped flag.
 PUT    /api/llm                     body: { base_url, auth_token?, model }
                                      → 200 { llm } | 400 | 412
+                                     SSRF-checks base_url. If auth_token is literal,
+                                     atomically writes config + .scry.env. Clears llm_skipped.
 POST   /api/llm/test                body: { base_url, auth_token?, model }
                                      → 200 { ok: true } | 200 { ok: false, error } | 400
+                                     SSRF-checks base_url before any outbound call.
 GET    /api/mcps/discover           → 200 { bundled, pathInstalled } | 412
 ```
 
-`GET /api/onboarding` returns an aggregated view; it does NOT compute the active step (per Q5 / Q-arch decision: server stays dumb, client derives).
+`GET /api/onboarding` returns an aggregated view; it does NOT compute the active step (per Q5 / Q-arch decision: server stays dumb, client derives) and does NOT perform any writes. The auto-complete migration runs at `scry serve` boot, separately (see "Concurrency & file locks" → "Auto-complete migration").
 
 ```ts
 type OnboardingState = {
@@ -186,13 +200,14 @@ New `src/config/dotenv-write.ts`:
 export function writeDotEnv(path: string, kv: Record<string, string>): Promise<void>
 ```
 
+- **Rejects values containing `\n` with a thrown `DotEnvValidationError`** before any write. Multi-line env values are out of scope; the wizard never legitimately produces them, and the parser/writer round-trip is fragile around them. Schema validation upstream (in `LlmConfigSchema` and the wizard form) catches this earlier; `writeDotEnv` enforces it as a runtime invariant.
 - Acquires `proper-lockfile` on `<path>.lock`.
-- If file exists: reads, parses into `Map<string, string>` preserving order and surrounding comments. Updates existing keys, appends new ones. Comments adjacent to a key (immediately preceding or trailing on the same line) move with the key.
+- If file exists: reads, parses into `Map<string, string>` preserving order and surrounding comments. Updates existing keys, appends new ones. Comments adjacent to a key (immediately preceding or trailing on the same line) move with the key. Comments on unchanged keys survive byte-for-byte.
 - If file does not exist: creates with `KEY=value` lines, no comments.
-- Values containing `\n`, `"`, or `'` get double-quoted with backslash escaping. Values matching `^[A-Za-z0-9._/=:@+-]+$` are written bare.
-- Atomic write: tmp + fsync + rename.
+- Values containing `"` or `'` get double-quoted with backslash escaping. Values matching `^[A-Za-z0-9._/=:@+-]+$` are written bare.
+- Atomic write: tmp + fsync + rename. (When called via `writeConfigAndEnv`, the rename is the second of the two-phase commit.)
 
-Tests cover: idempotent merge, comment preservation for unchanged keys, value quoting, concurrent writes serialize via lock.
+Tests cover: idempotent merge, comment preservation for unchanged keys, value quoting, `\n` rejection, concurrent writes serialize via lock.
 
 ### LLM test implementation
 
@@ -260,23 +275,55 @@ Search route reads `GET /api/onboarding` once on mount. If `mcps_skipped: true` 
 
 All `.scry.env` and `scry.config.yaml` writes flow through `proper-lockfile` (Plan E infra). Two parallel browser tabs in the wizard serialize writes. Vim hand-edits during onboarding are still a documented non-goal.
 
-Step 2's parallel `POST /api/mcps` calls each acquire/release the config lock independently — `proper-lockfile` is reentrant per process but serial across processes. With N picked MCPs, N writes serialize. That's correct (each is its own atomic event) and fine for N ≤ 10.
+Step 2's parallel `POST /api/onboarding/mcps` calls each acquire/release the config lock independently — `proper-lockfile` is reentrant per process but serial across processes. With N picked MCPs, N writes serialize. That's correct (each is its own atomic event) and fine for N ≤ 10.
+
+### Two-phase write across `.scry.env` + `scry.config.yaml`
+
+`PUT /api/llm` and Step 2's MCP write each touch BOTH files. Without coordination, a partial failure (env written, config write fails — or vice versa) leaves the system in an inconsistent state: orphaned secret in `.scry.env` with no reference, OR config pointing to a `${SCRY_LLM_TOKEN}` that doesn't exist in `.scry.env`.
+
+The solution is two-phase write with rollback:
+
+1. Acquire BOTH file locks (`scry.config.yaml.lock` first, then `.scry.env.lock` — alphabetical order to prevent deadlock between two routes that touch both).
+2. Stage `.scry.env` to `<path>.tmp` (no rename yet).
+3. Stage `scry.config.yaml` to `<path>.tmp` (no rename yet) AND validate via zod.
+4. If both staged successfully: rename config tmp → config, then rename env tmp → env. Order matters: config first so a failure between renames leaves config pointing at a stale env value (recoverable on next save) rather than a stale secret in env with no config reference.
+5. If any step fails: unlink both tmp files, do NOT rename, return error. Existing files are unchanged.
+6. Release locks in finally.
+
+This is a new helper, `writeConfigAndEnv(configPath, configUpdates, envKv)`, that wraps `writeConfig` and `writeDotEnv` into one atomic-pair operation. Lives in `src/config/write-config.ts` next to the existing `writeConfig`.
+
+`PUT /api/llm` and Step 2's wizard write both call `writeConfigAndEnv` (Step 2 once per MCP, since each MCP is its own atomic event). Plan E's existing `POST /api/mcps` route stays as-is for non-wizard callers (no env write needed there — env values come from the schema-validated body). The wizard's path is the new branch.
+
+### Auto-complete migration (server startup)
+
+The auto-complete heuristic for existing pre-G configs runs **once at `scry serve` boot**, not inside `GET /api/onboarding`. This keeps the GET pure-read and avoids the read-check-write race on parallel browser tabs.
+
+Migration logic (`src/server/migrations/onboarding-autocomplete.ts`):
+1. After `loadConfig` resolves, check: is `onboarding` block absent AND `llm` present AND `mcp_servers` non-empty?
+2. If yes: acquire config lock, re-read (in case startup races a concurrent `scry serve` — unlikely but cheap), re-check the condition, write `onboarding: { completed: true }` via `writeConfig`. Idempotent.
+3. If `onboarding` block exists with any state (including `completed: false`), do nothing — the user actively skipped or hand-edited.
+4. Logs the migration outcome to stderr ("scry: marked existing config as onboarding-complete" or "scry: no migration needed").
+
+Tested as a unit (loadConfig + migration is a pure function pair).
 
 ## Testing
 
 | Layer | Coverage |
 |---|---|
-| `src/config/schema.test.ts` (additions) | `LlmConfigSchema` happy/bad URL/bad model; `OnboardingSchema` defaults; ScryConfig with onboarding round-trip |
-| `src/config/dotenv-write.test.ts` NEW | merge/append/quote/lock-serialize/comment-preserve |
-| `src/server/llm-test.test.ts` NEW | fetch mocked; happy / 401 / network error / timeout / `${REF}` not in env |
-| `src/server/routes/onboarding.test.ts` NEW | GET on missing/partial/full configs; POST complete; POST skip llm/mcps; PUT env; CSRF rejection on each verb |
-| `src/server/routes/llm.test.ts` NEW | PUT happy/400/412; literal vs `${REF}` write paths; `.scry.env` written for literals; POST test happy/422 |
+| `src/config/schema.test.ts` (additions) | `LlmConfigSchema` happy/bad URL/bad model; SSRF allowlist (https / localhost / 127.0.0.1 OK; RFC1918, link-local, file://, ftp:// rejected); `OnboardingSchema` defaults; ScryConfig with onboarding round-trip |
+| `src/config/dotenv-write.test.ts` NEW | merge/append/quote/lock-serialize/comment-preserve; `\n` rejection throws DotEnvValidationError |
+| `src/config/write-config.test.ts` (additions) | `writeConfigAndEnv` happy path; rollback on env staging failure; rollback on config staging failure; rollback on validation failure; deadlock-free with concurrent calls; rename order (config then env) |
+| `src/server/migrations/onboarding-autocomplete.test.ts` NEW | runs when block absent + llm + mcps; no-op when block exists with completed: false; no-op on missing llm; no-op on empty mcps; logs to stderr |
+| `src/server/llm-test.test.ts` NEW | fetch mocked; happy / 401 / network error / timeout / `${REF}` not in env; SSRF allowlist enforced (rejects RFC1918 etc. with 400 BEFORE fetch) |
+| `src/server/routes/onboarding.test.ts` NEW | GET on missing/partial/full configs (PURE READ — no writes); POST complete; POST skip llm/mcps; POST mcps happy/422/409/atomic-write-pair; CSRF rejection on each verb |
+| `src/server/routes/llm.test.ts` NEW | PUT happy/400/412; SSRF rejection on PUT; literal vs `${REF}` write paths; atomic two-phase write; `llm_skipped` cleared on successful write; POST test happy/422; SSRF rejection on POST test |
 | `src/server/routes/mcps-discover.test.ts` NEW | bundled list shape; PATH-installed detection; 412 on missing config |
 | `web/src/routes/Onboarding.test.tsx` NEW | step derivation from server state (4 cases); rail navigation; URL sync; re-entry after completion |
 | `web/src/components/onboarding/OnboardingLlm.test.tsx` NEW | `${ANTHROPIC_API_KEY}` prefill on detectedRefs; localhost auto-checks proxy box; literal paste path; test pass/fail; skip writes flag |
-| `web/src/components/onboarding/OnboardingMcps.test.tsx` NEW | bundled cards render; pick expands env block; per-card env input persists; Test & Continue runs in parallel; 422 → drop & continue removes entry; skip flag |
+| `web/src/components/onboarding/OnboardingMcps.test.tsx` NEW | bundled cards render; pick expands env block; per-card env input persists; Test & Continue runs in parallel; 422 → drop & continue removes entry; skip flag; custom MCP via modal flows through `POST /api/onboarding/mcps` (single write, no modal-side POST) |
+| `web/src/components/McpAddModal.test.tsx` (additions) | `onSubmit` prop short-circuits internal POST; without `onSubmit`, manager-mode behavior unchanged |
 | `web/src/components/onboarding/OnboardingConfirm.test.tsx` NEW | summary renders both sections + skip warnings; finalize redirects |
-| `web/src/components/RequireOnboarding.test.tsx` NEW | redirect on `!completed`; pass-through on completed; 412 also redirects |
+| `web/src/components/RequireOnboarding.test.tsx` NEW | redirect on `!completed`; pass-through on completed; 412 also redirects; visibility-change re-fetches state |
 | `web/src/components/LibrarySidebar.test.tsx` (additions) | Onboarding link visible iff `!completed`; refreshes on completion |
 
 ## Acceptance criteria
@@ -303,9 +350,13 @@ Step 2's parallel `POST /api/mcps` calls each acquire/release the config lock in
 | Step 2's "test all" is slow when N MCPs are picked | Parallel via `Promise.allSettled`; per-card spinner during; user sees progress card-by-card. |
 | Custom MCP's env block has no `envVars[]` metadata | The `McpAddModal` already lets the user specify env keys — no auto-population for custom MCPs, the user pastes manually. Documented as "auto-env-block writing is bundled-only." |
 | User edits `~/.claude.json` after `/api/mcps/discover` runs | Discover is read-on-mount only; user can refresh the page to re-discover. Documented as a non-goal: live PATH watching. |
-| Existing-config users get auto-redirected into the wizard | First-`GET /api/onboarding` heuristic: IF the `onboarding` block is **entirely absent** from the config AND `llm` is present AND `mcp_servers` is non-empty, server auto-writes `onboarding: { completed: true }` BEFORE returning the response (single round-trip — the response reflects the post-write state). The heuristic does NOT run if the `onboarding` block exists with `completed: false` (the user actively skipped, don't second-guess). Tested. |
-| `RequireOnboarding`'s redirect loops with the auto-write heuristic | The auto-write happens BEFORE the response; the response always has the post-write state. Single round-trip per page load. Tested. |
+| Existing-config users get auto-redirected into the wizard | Server-startup migration runs once when `scry serve` boots: IF `onboarding` block is **entirely absent** AND `llm` is present AND `mcp_servers` is non-empty, write `onboarding: { completed: true }`. The migration is in `src/server/migrations/onboarding-autocomplete.ts` and is invoked from `boot.ts` after `loadConfig`. Idempotent. Two-tab race is impossible because migration runs before any HTTP listener accepts connections. The heuristic does NOT run if the `onboarding` block exists with `completed: false` (the user actively skipped, don't second-guess). Tested. |
+| `RequireOnboarding`'s redirect is stale across tabs | The wrapper re-runs `GET /api/onboarding` on `document.visibilitychange` (tab regains focus). A wizard completed in another tab gets reflected in this tab on next focus. Tested. |
+| Skip flag persists after user later configures the skipped piece | `PUT /api/llm` always clears `onboarding.llm_skipped`; `POST /api/onboarding/mcps` always clears `onboarding.mcps_skipped`. Documented as part of write logic. Tested. |
+| Custom MCP added via `McpAddModal` causes double-write or stale wizard state | `McpAddModal` accepts an optional `onSubmit` prop in wizard context; with it set, the modal short-circuits its internal `POST /api/mcps` and hands the data to the wizard, which routes the actual write through `POST /api/onboarding/mcps` like any other picked card. Single write path. Tested. |
+| `.scry.env` + config write partial-failure leaves orphaned secret | New `writeConfigAndEnv` helper performs two-phase write: stage both, then rename config first, then env. On any error, neither rename happens. Tested. |
 | LLM test endpoint becomes a credential-validation oracle (someone could query `/api/llm/test` with stolen tokens to test them) | CSRF middleware applies (already mounted globally, Plan A). Local-only binding (`127.0.0.1`) bounds blast radius. Documented; same threat model as Plan E's `/api/mcps/:name/test`. |
+| **SSRF via attacker-controlled `base_url`** — a malicious page in the user's browser could trick scry into making outbound HTTP calls to internal-network addresses | Strict allowlist (https-only, plus an explicit `http://localhost` / `http://127.0.0.1` carve-out for proxies). RFC1918, link-local, and non-loopback private addresses rejected with 400 BEFORE any fetch. Validation runs in both `POST /api/llm/test` and `PUT /api/llm` so neither path can be smuggled through. Tested with adversarial inputs. |
 
 ## Decision log
 
@@ -320,12 +371,26 @@ Step 2's parallel `POST /api/mcps` calls each acquire/release the config lock in
 - **`SCRY_LLM_TOKEN` for literal-paste tokens**, not `ANTHROPIC_API_KEY`. The latter is the user's environment; the former is scry's vault. Don't mix.
 - **LLM test uses raw fetch**, not the Anthropic SDK. Custom proxies (Hyperspace etc.) work transparently.
 - **Auto-complete heuristic for existing configs** — runs only when the `onboarding` block is entirely absent (i.e., a config from before Plan G shipped). If the block exists with `completed: false`, the user is mid-wizard or actively skipped; don't override.
+- **Auto-complete migration runs at server startup, not in `GET /api/onboarding`.** Keeps the GET pure-read; eliminates two-tab race; matches REST conventions; logs migration outcome to stderr for transparency.
+- **Two-phase atomic write across config + .scry.env.** New `writeConfigAndEnv` helper. Both files staged, then renamed in order (config first, env second) so partial failure leaves a recoverable state, never an orphaned secret.
+- **SSRF allowlist on `base_url`.** https-only with explicit `localhost`/`127.0.0.1` carve-out for proxies. Validation in BOTH `POST /api/llm/test` AND `PUT /api/llm` so neither path is smugglable.
+- **Skip flags clear on subsequent configuration.** Write to LLM clears `llm_skipped`; write to MCPs clears `mcps_skipped`. Avoids the "user skipped, then configured, then later cleared, banner re-activates" trap.
+- **Wizard uses `POST /api/onboarding/mcps`, not `POST /api/mcps`.** The wizard's mode includes atomic env-write + skip-flag clear; the manager's mode doesn't. Two endpoints with different write semantics; one helper underneath.
+- **`McpAddModal` gets an optional `onSubmit` prop for wizard context.** Manager mode unchanged. Wizard mode short-circuits the modal's internal POST and routes data through the wizard's own write path.
+- **`RequireOnboarding` re-fetches on visibility change**, not just on mount, so a tab that completed onboarding doesn't leave sibling tabs stuck redirecting.
 
 ## Open questions (none blocking implementation)
 
 - Should the LLM test endpoint expose token usage in the response? (Decision: no — it's a 1-token call, opacity is fine.)
 - Should the wizard track time-to-complete for telemetry? (Decision: no — single-user tool, no telemetry pipeline.)
 - Should we eventually support OpenAI-compatible endpoints? (Decision: out of scope; spec is Anthropic-shaped only. The base_url field accepts arbitrary URLs but the test endpoint assumes Anthropic Messages API.)
+
+## Dismissed reviewer points
+
+- **GPT "remove `.scry.env` keys on Drop & continue"** — would erase a token the user typed and might want to retry with. The user's `.scry.env` is theirs; the wizard owns only the keys it currently has live references to in config. Documented behavior: dropped MCPs leave their env keys in `.scry.env` for the user to remove manually if desired. UX polish (a one-line note in the drop confirmation) is a follow-up, not a spec change.
+- **GPT "skip LLM test on no-change re-entry"** — the test is fast (1-token, 5s timeout) and idempotent; the safety of "always tests reflect current reality" outweighs the saved token. A user editing Step 1 then immediately clicking Continue without changes is a rare path. Not optimizing.
+- **GPT "audit token logging in `/api/llm/test`"** — already covered by Issue #15 (route boot logs through stderr / structured logger), filed during PR #14 review. Spec adds a one-liner in the test plan: "redaction asserted by test" — but no scope expansion here.
+- **Gemini "use React Query / SWR for global state cache"** — `RequireOnboarding` only reads three fields once per visibility-change. Adding a query library for one component is overkill. The shared-cache concern is addressed by the visibility listener, which is the smaller fix that solves the actual bug Gemini identified.
 
 ---
 
