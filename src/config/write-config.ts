@@ -30,6 +30,22 @@ const PartialUpdatesSchema = z.object({
 });
 
 /**
+ * Pure validation of a WriteConfigUpdates object — throws ConfigValidationError
+ * on failure, returns void on success. No I/O. Exported so callers that need
+ * to validate before committing multiple writes can do a dry-run first.
+ */
+export function validateConfigUpdates(updates: WriteConfigUpdates): void {
+  const parsed = PartialUpdatesSchema.safeParse(updates);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i: ZodIssue) => ({
+      path: i.path.map(String),
+      message: i.message,
+    }));
+    throw new ConfigValidationError(issues);
+  }
+}
+
+/**
  * Validate updates, then read-merge-write the YAML doc with a cross-process
  * file lock around the whole cycle.
  *
@@ -50,14 +66,8 @@ export async function writeConfig(path: string, updates: WriteConfigUpdates): Pr
 
   // Validate up front. Short-circuits before any fs touch beyond the
   // existence check above.
-  const parsed = PartialUpdatesSchema.safeParse(updates);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i: ZodIssue) => ({
-      path: i.path.map(String),
-      message: i.message,
-    }));
-    throw new ConfigValidationError(issues);
-  }
+  validateConfigUpdates(updates);
+  const parsed = PartialUpdatesSchema.parse(updates);
 
   const release = await lockfile.lock(path, {
     stale: 10_000,
@@ -75,11 +85,11 @@ export async function writeConfig(path: string, updates: WriteConfigUpdates): Pr
       throw new Error(`Config at ${path} contains YAML syntax errors: ${doc.errors[0].message}`);
     }
 
-    if (parsed.data.mcp_servers !== undefined) {
-      doc.set('mcp_servers', parsed.data.mcp_servers);
+    if (parsed.mcp_servers !== undefined) {
+      doc.set('mcp_servers', parsed.mcp_servers);
     }
-    if (parsed.data.registry !== undefined) {
-      doc.set('registry', parsed.data.registry);
+    if (parsed.registry !== undefined) {
+      doc.set('registry', parsed.registry);
     }
 
     const out = String(doc);
