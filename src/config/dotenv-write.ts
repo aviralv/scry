@@ -61,7 +61,7 @@ export async function writeDotEnv(path: string, kv: Record<string, string>): Pro
   // Validate all values BEFORE any I/O so a single bad value doesn't leave the
   // file half-written.
   for (const [k, v] of Object.entries(kv)) {
-    if (v.includes('\n')) throw new DotEnvValidationError(k, 'multi-line values are not allowed');
+    if (/[\r\n]/.test(v)) throw new DotEnvValidationError(k, 'multi-line values are not allowed');
   }
 
   if (Object.keys(kv).length === 0) return;

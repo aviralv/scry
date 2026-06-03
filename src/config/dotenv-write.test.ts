@@ -56,6 +56,16 @@ describe('writeDotEnv', () => {
     expect(existsSync(envPath)).toBe(false);
   });
 
+  it('throws DotEnvValidationError on values containing \\r', async () => {
+    await expect(writeDotEnv(envPath, { BAD: 'line1\rline2' })).rejects.toThrow(DotEnvValidationError);
+    expect(existsSync(envPath)).toBe(false);
+  });
+
+  it('throws DotEnvValidationError on values containing \\r\\n', async () => {
+    await expect(writeDotEnv(envPath, { BAD: 'line1\r\nline2' })).rejects.toThrow(DotEnvValidationError);
+    expect(existsSync(envPath)).toBe(false);
+  });
+
   it('serializes concurrent writes via the file lock', async () => {
     writeFileSync(envPath, 'A=0\n');
     await Promise.all([
