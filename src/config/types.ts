@@ -1,6 +1,6 @@
 export interface LlmConfig {
   base_url: string;
-  auth_token: string;
+  auth_token?: string;
   model: string;
 }
 
@@ -22,6 +22,7 @@ export interface ScryConfig {
   mcp_servers: Record<string, McpServerConfig>;
   search_tools: Record<string, SearchToolConfig[]>;
   registry?: Registry;
+  onboarding?: Onboarding;
 }
 
 export interface PersonIdentifiers {
@@ -55,6 +56,12 @@ export interface Project {
 export interface Registry {
   people: Record<string, Person>;
   projects: Record<string, Project>;
+}
+
+export interface Onboarding {
+  completed: boolean;
+  llm_skipped?: boolean;
+  mcps_skipped?: boolean;
 }
 
 export interface SearchResult {

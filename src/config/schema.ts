@@ -42,3 +42,17 @@ export const RegistrySchema = z.object({
 });
 
 export const McpServersMapSchema = z.record(z.string().regex(SLUG_RE), McpServerConfigSchema);
+
+const URL_RE = /^https?:\/\/.+/;
+
+export const LlmConfigSchema = z.object({
+  base_url: z.string().regex(URL_RE),
+  auth_token: z.string().regex(ENV_VALUE_RE).optional(),
+  model: z.string().min(1),
+});
+
+export const OnboardingSchema = z.object({
+  completed: z.boolean().default(false),
+  llm_skipped: z.boolean().optional(),
+  mcps_skipped: z.boolean().optional(),
+});
