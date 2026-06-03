@@ -3,13 +3,16 @@ import type { BundledServer } from './types.js';
 export const BUNDLED_SERVERS: BundledServer[] = [
   {
     name: 'Slack',
+    slug: 'slack',
     command: 'slack-mcp',
     githubUrl: 'https://github.com/aviralv/slack-mcp',
     description: 'Slack search, channel history, DMs',
     searchTools: [{ tool: 'slack_search', params: { format: 'json' }, normalizer: 'slack' }],
+    envVars: ['SLACK_TOKEN'],
   },
   {
     name: 'Microsoft 365',
+    slug: 'ms365',
     command: 'ms365-intent-mcp',
     githubUrl: 'https://github.com/aviralv/ms365-intent-mcp',
     description: 'Outlook email, calendar, Teams, OneDrive',
@@ -18,6 +21,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
   },
   {
     name: 'Confluence & Jira',
+    slug: 'confluence-jira',
     command: 'confluence-jira-mcp',
     githubUrl: 'https://github.com/aviralv/confluence-jira-mcp',
     description: 'Confluence pages, Jira issues',

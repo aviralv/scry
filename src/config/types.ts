@@ -90,6 +90,7 @@ export interface SynthesisResult {
 
 export interface BundledServer {
   name: string;
+  slug: string;        // canonical slug used as the mcp_servers.<key> entry key
   command: string;
   githubUrl: string;
   description: string;
