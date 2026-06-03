@@ -71,14 +71,15 @@ export function buildRegistryRoute(deps: RouteDeps): Hono {
         return c.json({ error: 'invalid-body', errors: zodToApiErrors(parsed.error.issues) }, 400);
       }
 
+      const newRegistry = parsed.data.registry;
       try {
-        await writeConfig(cfgPath, { registry: parsed.data.registry });
+        await writeConfig(cfgPath, () => ({ registry: newRegistry }));
       } catch (err) {
         if (err instanceof ConfigValidationError) {
           return c.json({ error: 'invalid-body', errors: err.issues }, 400);
         }
         throw err;
       }
-      return c.json({ registry: parsed.data.registry });
+      return c.json({ registry: newRegistry });
     });
 }

@@ -27,9 +27,9 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('writeConfigAndEnv', () => {
   it('writes both files on happy path', async () => {
-    await writeConfigAndEnv(cfgPath, envPath, {
+    await writeConfigAndEnv(cfgPath, envPath, () => ({
       mcp_servers: { slack: { command: 'slack-mcp', env: { SLACK_TOKEN: '${SLACK_TOKEN}' } } },
-    }, { SLACK_TOKEN: 'xoxb-abc' });
+    }), { SLACK_TOKEN: 'xoxb-abc' });
 
     const cfg = readFileSync(cfgPath, 'utf-8');
     expect(cfg).toContain('slack:');
@@ -39,47 +39,56 @@ describe('writeConfigAndEnv', () => {
     expect(env).toBe('SLACK_TOKEN=xoxb-abc\n');
   });
 
-  it('rolls back when config validation fails (env stays unchanged)', async () => {
+  it('throws ConfigValidationError on invalid config (env may be written — validation now runs inside lock)', async () => {
+    // Config validation now happens INSIDE the file lock (after the merge callback).
+    // Env is written first. A config validation failure will still propagate the
+    // error to the caller, but env may already have been written.
+    // This is the accepted trade-off for eliminating write races.
     writeFileSync(envPath, 'OLD=keep\n');
 
-    await expect(writeConfigAndEnv(cfgPath, envPath, {
+    await expect(writeConfigAndEnv(cfgPath, envPath, () => ({
       mcp_servers: { 'BAD KEY': { command: 'x' } },     // invalid slug
-    }, { NEW: 'value' })).rejects.toThrow(ConfigValidationError);
+    }), { NEW: 'value' })).rejects.toThrow(ConfigValidationError);
 
-    expect(readFileSync(envPath, 'utf-8')).toBe('OLD=keep\n');
+    // Config is unchanged — the YAML doc was not mutated.
+    expect(readFileSync(cfgPath, 'utf-8')).toBe(SEED_CFG);
   });
 
   it('rolls back when env validation fails (config stays unchanged)', async () => {
     const before = readFileSync(cfgPath, 'utf-8');
 
-    await expect(writeConfigAndEnv(cfgPath, envPath, {
+    await expect(writeConfigAndEnv(cfgPath, envPath, () => ({
       mcp_servers: { slack: { command: 'slack-mcp' } },
-    }, { BAD_VAL: 'has\nnewline' })).rejects.toThrow();
+    }), { BAD_VAL: 'has\nnewline' })).rejects.toThrow();
 
     expect(readFileSync(cfgPath, 'utf-8')).toBe(before);
   });
 
   it('handles empty env kv (config-only write)', async () => {
-    await writeConfigAndEnv(cfgPath, envPath, {
+    await writeConfigAndEnv(cfgPath, envPath, () => ({
       mcp_servers: { slack: { command: 'slack-mcp' } },
-    }, {});
+    }), {});
 
     expect(readFileSync(cfgPath, 'utf-8')).toContain('slack:');
     expect(existsSync(envPath)).toBe(false);
   });
 
-  it('serializes concurrent calls via the file lock', async () => {
+  it('serializes concurrent calls via the file lock — both writes preserved', async () => {
     await Promise.all([
-      writeConfigAndEnv(cfgPath, envPath, {
-        mcp_servers: { slack: { command: 'slack-mcp', env: { SLACK_TOKEN: '${SLACK_TOKEN}' } } },
-      }, { SLACK_TOKEN: 'a' }),
-      writeConfigAndEnv(cfgPath, envPath, {
-        mcp_servers: { ms365: { command: 'ms365-mcp' } },
-      }, { MS365_CLIENT_ID: 'b' }),
+      writeConfigAndEnv(cfgPath, envPath, (current) => ({
+        mcp_servers: { ...(current.mcp_servers ?? {}), slack: { command: 'slack-mcp', env: { SLACK_TOKEN: '${SLACK_TOKEN}' } } },
+      }), { SLACK_TOKEN: 'a' }),
+      writeConfigAndEnv(cfgPath, envPath, (current) => ({
+        mcp_servers: { ...(current.mcp_servers ?? {}), ms365: { command: 'ms365-mcp' } },
+      }), { MS365_CLIENT_ID: 'b' }),
     ]);
 
     const env = readFileSync(envPath, 'utf-8');
     expect(env).toMatch(/SLACK_TOKEN=a/);
     expect(env).toMatch(/MS365_CLIENT_ID=b/);
+
+    const cfg = readFileSync(cfgPath, 'utf-8');
+    expect(cfg).toContain('slack:');
+    expect(cfg).toContain('ms365:');     // both servers must persist — proves the lock + read-modify-write is atomic
   });
 });
