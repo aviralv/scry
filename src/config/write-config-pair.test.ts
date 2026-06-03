@@ -39,19 +39,23 @@ describe('writeConfigAndEnv', () => {
     expect(env).toBe('SLACK_TOKEN=xoxb-abc\n');
   });
 
-  it('throws ConfigValidationError on invalid config (env may be written — validation now runs inside lock)', async () => {
+  it('throws ConfigValidationError on invalid config (env IS written — validation runs inside lock)', async () => {
     // Config validation now happens INSIDE the file lock (after the merge callback).
     // Env is written first. A config validation failure will still propagate the
     // error to the caller, but env may already have been written.
     // This is the accepted trade-off for eliminating write races.
     writeFileSync(envPath, 'OLD=keep\n');
+    const before = readFileSync(cfgPath, 'utf-8');
 
     await expect(writeConfigAndEnv(cfgPath, envPath, () => ({
       mcp_servers: { 'BAD KEY': { command: 'x' } },     // invalid slug
     }), { NEW: 'value' })).rejects.toThrow(ConfigValidationError);
 
-    // Config is unchanged — the YAML doc was not mutated.
-    expect(readFileSync(cfgPath, 'utf-8')).toBe(SEED_CFG);
+    // Trade-off: env IS written before config validation runs (inside lock).
+    expect(readFileSync(envPath, 'utf-8')).toContain('NEW=value');
+    expect(readFileSync(envPath, 'utf-8')).toContain('OLD=keep');
+    // Config stays unchanged (validation rejects before doc.set + atomicWriteConfig).
+    expect(readFileSync(cfgPath, 'utf-8')).toBe(before);
   });
 
   it('rolls back when env validation fails (config stays unchanged)', async () => {

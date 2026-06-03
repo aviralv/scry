@@ -27,6 +27,13 @@ export class ConfigNameExistsError extends Error {
   }
 }
 
+export class ConfigNotFoundError extends Error {
+  constructor(public readonly entity: string, public readonly name: string) {
+    super(`${entity} "${name}" not found`);
+    this.name = 'ConfigNotFoundError';
+  }
+}
+
 export interface WriteConfigUpdates {
   mcp_servers?: Record<string, unknown>;
   registry?: unknown;

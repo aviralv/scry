@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
 import { McpServerConfigSchema, McpServersMapSchema } from '../../config/schema.js';
-import { writeConfig, ConfigValidationError, ConfigNameExistsError } from '../../config/write-config.js';
+import { writeConfig, ConfigValidationError, ConfigNameExistsError, ConfigNotFoundError } from '../../config/write-config.js';
 import { healthCheck as realHealthCheck, type HealthCheckResult } from '../mcp-health.js';
 import type { McpServerConfig } from '../../config/types.js';
 import { zodToApiErrors } from '../../shared/api-errors.js';
@@ -153,13 +153,13 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
           const entry = existing[name];
           if (!entry) {
             // Concurrent DELETE beat us — treat as not-found.
-            throw new Error('not-found');
+            throw new ConfigNotFoundError('MCP', name);
           }
           finalMerged = { ...entry, ...patch };
           return { mcp_servers: { ...existing, [name]: finalMerged } };
         });
       } catch (err) {
-        if (err instanceof Error && err.message === 'not-found') {
+        if (err instanceof ConfigNotFoundError) {
           return c.json({ error: 'not-found' }, 404);
         }
         if (err instanceof ConfigValidationError) return c.json({ error: 'invalid-body', errors: err.issues }, 400);
