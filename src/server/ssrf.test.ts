@@ -11,6 +11,8 @@ describe('isAllowedBaseUrl', () => {
       ['http://localhost'],
       ['http://127.0.0.1:8080'],
       ['http://127.0.0.1'],
+      ['http://[::1]'],
+      ['http://[::1]:8080'],
     ])('accepts %s', (url) => {
       expect(isAllowedBaseUrl(url)).toEqual({ ok: true });
     });
@@ -27,6 +29,10 @@ describe('isAllowedBaseUrl', () => {
       ['https://172.31.0.1', 'private-address-blocked'],
       ['https://192.168.1.1', 'private-address-blocked'],
       ['https://169.254.169.254', 'link-local-blocked'],
+      ['https://[fe80::1]', 'link-local-blocked'],
+      ['https://[fd00::1]', 'private-address-blocked'],
+      ['https://[fd00:ec2::254]', 'private-address-blocked'],
+      ['https://[fc00::1]', 'private-address-blocked'],
       ['not-a-url', 'invalid-url'],
       ['', 'invalid-url'],
     ])('rejects %s with reason %s', (url, reason) => {

@@ -18,6 +18,21 @@ const RFC1918_RANGES: Array<[number[], number]> = [
 
 const LINK_LOCAL_PREFIX = [169, 254];
 
+function unbracket(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+}
+
+function isPrivateIPv6(host: string): SsrfReason | null {
+  if (!host.includes(':')) return null; // not IPv6
+  // fe80::/10 — link-local. First 10 bits are 1111 1110 10, so the first
+  // segment of the address begins with fe8x–febx.
+  if (/^fe[89ab][0-9a-f]/i.test(host)) return 'link-local-blocked';
+  // fc00::/7 — unique-local. First 7 bits are 1111 110, so first byte is
+  // 0xfc or 0xfd.
+  if (/^f[cd][0-9a-f]{2}/i.test(host)) return 'private-address-blocked';
+  return null;
+}
+
 function parseIPv4(host: string): number[] | null {
   const parts = host.split('.');
   if (parts.length !== 4) return null;
@@ -54,20 +69,23 @@ export function isAllowedBaseUrl(url: string): SsrfResult {
     return { ok: false, reason: 'scheme-not-allowed', detail: parsed.protocol };
   }
 
-  const host = parsed.hostname.toLowerCase();
+  const host = unbracket(parsed.hostname.toLowerCase());
   const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
 
   if (parsed.protocol === 'http:' && !isLocalhost) {
     return { ok: false, reason: 'http-only-allowed-on-localhost' };
   }
 
-  // For non-localhost hosts, also block private IPv4 ranges.
+  // For non-localhost hosts, block private IPv4 and IPv6 ranges.
   if (!isLocalhost) {
     const octets = parseIPv4(host);
     if (octets) {
       const blocked = isPrivateIPv4(octets);
       if (blocked) return { ok: false, reason: blocked };
     }
+    // IPv6 — string-shape check on leading bytes.
+    const blockedV6 = isPrivateIPv6(host);
+    if (blockedV6) return { ok: false, reason: blockedV6 };
     // For hostnames (not bare IPs) we don't resolve — DNS-rebinding is a
     // residual risk documented in the spec. Best-effort.
   }
