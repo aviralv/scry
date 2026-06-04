@@ -6,6 +6,7 @@ import { generateCsrfToken } from './middleware/csrf-token.js';
 import { resolveConfigPath } from '../config/loader.js';
 import { loadDotEnvFile } from '../config/dotenv.js';
 import { SessionsStore } from '../storage/sessions.js';
+import { runOnboardingAutocomplete } from './migrations/onboarding-autocomplete.js';
 
 export interface BootOptions {
   port: number;
@@ -16,7 +17,7 @@ export interface BootOptions {
  * Rejects on EADDRINUSE or other listen failures so the CLI can surface a
  * structured error instead of crashing later.
  */
-export function startServer(opts: BootOptions): Promise<Server> {
+export async function startServer(opts: BootOptions): Promise<Server> {
   generateCsrfToken();
   const configPath = resolveConfigPath();
   // Log the resolved config path so a stale cwd-precedence config doesn't
@@ -30,6 +31,9 @@ export function startServer(opts: BootOptions): Promise<Server> {
   // loads cause no harm; what we cannot tolerate is *not* loading it before
   // /api/mcps/:name/test runs.
   loadDotEnvFile(join(configDir, '.scry.env'));
+
+  // One-time migration for pre-G configs (idempotent).
+  await runOnboardingAutocomplete(configPath);
 
   const sessionsStore = new SessionsStore(join(configDir, 'scry.db'));
 
