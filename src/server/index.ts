@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
-import { resolve } from 'path';
+import { resolve, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { originAllowlist } from './middleware/origin.js';
 import { csrfRequired } from './middleware/csrf.js';
 import { healthRoute } from './routes/health.js';
@@ -10,6 +9,7 @@ import { buildSearchRoute } from './routes/search.js';
 import { buildSessionsRoute } from './routes/sessions.js';
 import { buildMcpsRoute } from './routes/mcps.js';
 import { buildRegistryRoute } from './routes/registry.js';
+import { buildLlmRoute } from './routes/llm.js';
 import { staticHandler } from './static.js';
 import { resolveConfigPath } from '../config/loader.js';
 import type { SessionsStore } from '../storage/sessions.js';
@@ -35,6 +35,10 @@ export function createServer(opts: ServerOptions) {
   app.route('/api/search', buildSearchRoute(opts.sessionsStore));
   app.route('/api/mcps', buildMcpsRoute({ configPath: () => resolveConfigPath() }));
   app.route('/api/registry', buildRegistryRoute({ configPath: () => resolveConfigPath() }));
+  app.route('/api/llm', buildLlmRoute({
+    configPath: () => resolveConfigPath(),
+    envPath: () => join(dirname(resolveConfigPath()), '.scry.env'),
+  }));
 
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
   app.use('*', staticHandler(staticDir));
