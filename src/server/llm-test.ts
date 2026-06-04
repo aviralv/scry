@@ -35,7 +35,7 @@ function joinUrl(base: string, path: string): string {
 export async function runLlmTest(input: LlmTestInput, opts: LlmTestOpts = {}): Promise<LlmTestResult> {
   const ssrf = isAllowedBaseUrl(input.base_url);
   if (!ssrf.ok) {
-    return { ok: false, error: `base_url disallowed: ${ssrf.reason}` };
+    return { ok: false, error: `base_url disallowed: ${ssrf.reason}${ssrf.detail ? ` (${ssrf.detail})` : ''}` };
   }
 
   const tokenResult = resolveAuthToken(input.auth_token);

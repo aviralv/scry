@@ -42,6 +42,15 @@ describe('runLlmTest', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('includes ssrf.detail in error message when present', async () => {
+    const r = await runLlmTest({ base_url: 'ftp://example.com', model: 'm' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/scheme-not-allowed/);
+      expect(r.error).toContain('ftp:');
+    }
+  });
+
   it('resolves a ${REF} auth_token from process.env', async () => {
     process.env.SCRY_TEST_TOKEN = 'resolved-value';
     fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
