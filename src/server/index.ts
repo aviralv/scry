@@ -11,6 +11,7 @@ import { buildMcpsRoute } from './routes/mcps.js';
 import { buildRegistryRoute } from './routes/registry.js';
 import { buildLlmRoute } from './routes/llm.js';
 import { buildMcpsDiscoverRoute } from './routes/mcps-discover.js';
+import { buildOnboardingRoute } from './routes/onboarding.js';
 import { staticHandler } from './static.js';
 import { resolveConfigPath } from '../config/loader.js';
 import type { SessionsStore } from '../storage/sessions.js';
@@ -41,6 +42,10 @@ export function createServer(opts: ServerOptions) {
     envPath: () => join(dirname(resolveConfigPath()), '.scry.env'),
   }));
   app.route('/api/mcps/discover', buildMcpsDiscoverRoute({ configPath: () => resolveConfigPath() }));
+  app.route('/api/onboarding', buildOnboardingRoute({
+    configPath: () => resolveConfigPath(),
+    envPath: () => join(dirname(resolveConfigPath()), '.scry.env'),
+  }));
 
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
   app.use('*', staticHandler(staticDir));
