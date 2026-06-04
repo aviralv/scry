@@ -137,6 +137,7 @@ describe('PUT /api/llm', () => {
     expect(r.status).toBe(200);
     const out = readFileSync(cfg, 'utf-8');
     expect(out).not.toMatch(/llm_skipped:\s*true/);
+    expect(out).toMatch(/completed:\s*false/);   // sibling field must survive surgical removal
   });
 
   it('handles a config with no auth_token (proxy case)', async () => {

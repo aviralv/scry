@@ -68,6 +68,9 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
       try {
         // Write env first if needed (validates synchronously before any I/O via writeDotEnv).
         if (Object.keys(envKv).length > 0) {
+          // Env first, config second. Same partial-write trade-off as writeConfigAndEnv:
+          // if config write fails after env write, .scry.env has a dangling SCRY_LLM_TOKEN.
+          // Self-healing on retry (env write is idempotent for the same key).
           await writeDotEnv(deps.envPath(), envKv);
         }
 
