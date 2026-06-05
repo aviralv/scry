@@ -8,7 +8,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
     githubUrl: 'https://github.com/aviralv/slack-mcp',
     description: 'Slack search, channel history, DMs',
     searchTools: [{ tool: 'slack_search', params: { format: 'json' }, normalizer: 'slack' }],
-    envVars: ['SLACK_TOKEN'],
+    // No envVars: slack-mcp uses your Slack desktop app's saved session, not an API token.
   },
   {
     name: 'Microsoft 365',
