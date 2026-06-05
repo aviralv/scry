@@ -6,10 +6,25 @@
 //
 // Why this is a separate script (not a vitest test):
 //   - Network + cost: each fixture is one Messages API call.
-//   - Non-deterministic: model output varies. We run sample_count > 1 and
-//     report pass rate, not a binary pass/fail.
+//   - These are diagnostics, not gates.
 //
 // Run: `npm run eval:synthesis`
+//
+// Determinism:
+//   The eval pins `temperature: 0` so the same model + same fixtures
+//   produce the same scores run-to-run. This is required for the
+//   "clean rate" metric to be a reproducible regression signal rather
+//   than a sampling artifact. Override with EVAL_TEMPERATURE if you
+//   want exploratory variance (results not comparable across runs).
+//
+// Caveat:
+//   The fixtures hand the model a synthetic "tool results" preamble in a
+//   single user turn — bypassing the agent loop where the production bug
+//   was originally observed. A clean baseline here means the synthesis
+//   step doesn't fabricate affiliations *given clean source content in a
+//   single-turn synthesis*. It does NOT prove the agent loop is clean.
+//   Re-run the eval whenever the model is bumped; do not assume the
+//   prompt prevents the behavior.
 //
 // Config:
 //   ANTHROPIC_API_KEY  required, or
@@ -17,8 +32,10 @@
 //   EVAL_MODEL         default: claude-haiku-4-5-20251001
 //   EVAL_SAMPLES       default: 3 (per fixture)
 //   EVAL_FILTER        default: '' — substring match on fixture filename
+//   EVAL_TEMPERATURE   default: 0 (deterministic)
+//   EVAL_OUTPUT        optional: JSON results path; written even if exit non-zero
 
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { parse as parseYaml } from 'yaml';
@@ -60,8 +77,11 @@ interface SampleResult {
 interface FixtureResult {
   fixture: Fixture;
   samples: SampleResult[];
-  passRate: number;       // fraction of samples with zero forbidden hits AND zero required misses
-  cleanRate: number;      // fraction with zero forbidden hits (the bug-specific metric)
+  cleanCount: number;     // raw integer — number of samples with zero forbidden hits
+  fullPassCount: number;  // raw integer — clean + zero required misses
+  totalSamples: number;   // raw integer — same as samples.length
+  cleanRate: number;      // cleanCount / totalSamples
+  passRate: number;       // fullPassCount / totalSamples
 }
 
 function loadFixtures(filter: string): Fixture[] {
@@ -143,6 +163,7 @@ async function runFixture(
   model: string,
   fixture: Fixture,
   samples: number,
+  temperature: number,
 ): Promise<FixtureResult> {
   // Use the same system prompt the engine ships so the eval reflects the
   // production prompt, not a separate copy. serverNames mirrors the
@@ -157,6 +178,7 @@ async function runFixture(
     const resp = await client.messages.create({
       model,
       max_tokens: 1024,
+      temperature,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
@@ -167,18 +189,21 @@ async function runFixture(
     sampleResults.push(scoreSample(text, fixture));
   }
 
-  const clean = sampleResults.filter((s) => s.forbiddenHits.length === 0).length;
-  const fullPass = sampleResults.filter((s) => s.forbiddenHits.length === 0 && s.requiredMisses.length === 0).length;
+  const cleanCount = sampleResults.filter((s) => s.forbiddenHits.length === 0).length;
+  const fullPassCount = sampleResults.filter((s) => s.forbiddenHits.length === 0 && s.requiredMisses.length === 0).length;
 
   return {
     fixture,
     samples: sampleResults,
-    passRate: fullPass / samples,
-    cleanRate: clean / samples,
+    cleanCount,
+    fullPassCount,
+    totalSamples: samples,
+    cleanRate: cleanCount / samples,
+    passRate: fullPassCount / samples,
   };
 }
 
-function printReport(results: FixtureResult[], samples: number): void {
+function printReport(results: FixtureResult[]): void {
   console.log('');
   console.log('='.repeat(72));
   console.log('Synthesis eval — fabricated affiliation labels (#7)');
@@ -195,8 +220,8 @@ function printReport(results: FixtureResult[], samples: number): void {
     console.log('');
     console.log(`${status} ${r.fixture.name}`);
     console.log(`  query: ${r.fixture.query}`);
-    console.log(`  clean (no forbidden hits): ${cleanPct}% (${Math.round(r.cleanRate * samples)}/${samples})`);
-    console.log(`  full pass (clean + all required): ${passPct}% (${Math.round(r.passRate * samples)}/${samples})`);
+    console.log(`  clean (no forbidden hits): ${cleanPct}% (${r.cleanCount}/${r.totalSamples})`);
+    console.log(`  full pass (clean + all required): ${passPct}% (${r.fullPassCount}/${r.totalSamples})`);
     r.samples.forEach((s, i) => {
       if (s.forbiddenHits.length > 0) {
         console.log(`  sample ${i + 1}: FORBIDDEN HITS:`);
@@ -210,9 +235,9 @@ function printReport(results: FixtureResult[], samples: number): void {
       }
     });
 
-    totalClean += Math.round(r.cleanRate * samples);
-    totalPass += Math.round(r.passRate * samples);
-    totalSamples += samples;
+    totalClean += r.cleanCount;
+    totalPass += r.fullPassCount;
+    totalSamples += r.totalSamples;
   }
 
   console.log('');
@@ -221,28 +246,62 @@ function printReport(results: FixtureResult[], samples: number): void {
   console.log('='.repeat(72));
 }
 
+function writeJsonResults(
+  outPath: string,
+  meta: { model: string; samples: number; temperature: number },
+  results: FixtureResult[],
+): void {
+  const payload = {
+    meta,
+    fixtures: results.map((r) => ({
+      name: r.fixture.name,
+      query: r.fixture.query,
+      cleanCount: r.cleanCount,
+      fullPassCount: r.fullPassCount,
+      totalSamples: r.totalSamples,
+      cleanRate: r.cleanRate,
+      passRate: r.passRate,
+      samples: r.samples,
+    })),
+    overall: {
+      cleanCount: results.reduce((a, r) => a + r.cleanCount, 0),
+      fullPassCount: results.reduce((a, r) => a + r.fullPassCount, 0),
+      totalSamples: results.reduce((a, r) => a + r.totalSamples, 0),
+    },
+  };
+  mkdirSync(dirname(resolve(outPath)), { recursive: true });
+  writeFileSync(outPath, JSON.stringify(payload, null, 2), 'utf-8');
+  console.log(`[eval] wrote results to ${outPath}`);
+}
+
 async function main(): Promise<void> {
   const samples = Number(process.env.EVAL_SAMPLES ?? '3');
   const filter = process.env.EVAL_FILTER ?? '';
+  // Default to deterministic. Bumping temperature breaks regression-net
+  // semantics; do it deliberately by setting EVAL_TEMPERATURE.
+  const temperature = Number(process.env.EVAL_TEMPERATURE ?? '0');
+  const outPath = process.env.EVAL_OUTPUT;
   const fixtures = loadFixtures(filter);
   if (fixtures.length === 0) {
     console.error(`[eval] No fixtures matched filter "${filter}".`);
     process.exit(1);
   }
   const { client, model } = getClient();
-  console.log(`[eval] model=${model} samples_per_fixture=${samples} fixtures=${fixtures.length}`);
+  console.log(`[eval] model=${model} samples_per_fixture=${samples} temperature=${temperature} fixtures=${fixtures.length}`);
   if (filter) console.log(`[eval] filter=${filter}`);
 
   const results: FixtureResult[] = [];
   for (const fx of fixtures) {
     process.stdout.write(`[eval] running ${fx.name} ... `);
-    const r = await runFixture(client, model, fx, samples);
+    const r = await runFixture(client, model, fx, samples, temperature);
     process.stdout.write(`clean ${(r.cleanRate * 100).toFixed(0)}%\n`);
     results.push(r);
   }
-  printReport(results, samples);
+  printReport(results);
+  if (outPath) writeJsonResults(outPath, { model, samples, temperature }, results);
 
-  // Exit non-zero if any fixture had any forbidden hit. Useful for CI later.
+  // Exit non-zero if any fixture had any forbidden hit. With temperature=0
+  // this is deterministic; in CI a flake is a real bug, not a sample artifact.
   const anyFail = results.some((r) => r.cleanRate < 1);
   process.exit(anyFail ? 1 : 0);
 }

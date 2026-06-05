@@ -14,3 +14,6 @@ dist/
 
 # Visual brainstorming companion
 .superpowers/
+
+# Eval result artifacts (use EVAL_OUTPUT to write here)
+/eval-results/

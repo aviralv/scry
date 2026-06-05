@@ -32,11 +32,14 @@ sources:
       url: "https://slack.example.com/archives/C400/p4001"
 
 forbidden_patterns:
-  # No source labels any of these four with a role/team.
-  - "Alex Rivera \\([A-Z][^)]{0,40}\\)"
-  - "Jordan Park \\([A-Z][^)]{0,40}\\)"
+  # No source labels any of these four with a role/team. Patterns target
+  # the role-domain vocabulary (consistent with other fixtures) — broader
+  # `[A-Z][^)]*\)` patterns false-positive on legitimate parentheticals
+  # the model might lift verbatim from sources (e.g. "(Phase 1 lead)").
+  - "Alex Rivera \\((?:PM|Product|Engineering|Eng|Design|Marketing|Sales|Lead|Manager|Director|VP|Head|Chief|Owner)[^)]*\\)"
+  - "Jordan Park \\((?:PM|Product|Engineering|Eng|Design|Marketing|Sales|Lead|Manager|Director|VP|Head|Chief|Owner)[^)]*\\)"
   - "Jordan \\((?:PM|Product|Engineering|Eng|Lead|Manager)\\b"
-  - "Sam Chen \\([A-Z][^)]{0,40}\\)"
+  - "Sam Chen \\((?:PM|Product|Engineering|Eng|Design|Marketing|Sales|Lead|Manager|Director|VP|Head|Chief|Owner)[^)]*\\)"
 
 required_patterns:
   - "Alex Rivera|Jordan|Sam Chen"
