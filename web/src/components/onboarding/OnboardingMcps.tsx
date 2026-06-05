@@ -7,12 +7,14 @@ import { McpAddModal } from '../McpAddModal.js';
 
 interface Props {
   initialMcps: McpServerEntry[];
+  detectedEnvKeys: string[];
   onAdvance: () => void;
 }
 
 interface CardState {
   picked: boolean;
   envValues: Record<string, string>;
+  overrides: Set<string>;
   status: CardStatus;
   errorMessage?: string;
 }
@@ -23,7 +25,7 @@ interface CustomEntry {
   errorMessage?: string;
 }
 
-export function OnboardingMcps({ initialMcps, onAdvance }: Props): JSX.Element {
+export function OnboardingMcps({ initialMcps, detectedEnvKeys, onAdvance }: Props): JSX.Element {
   const [bundled, setBundled] = useState<BundledServerView[]>([]);
   const [pathInstalled, setPathInstalled] = useState<Set<string>>(new Set());
   const [cards, setCards] = useState<Record<string, CardState>>({});
@@ -44,6 +46,7 @@ export function OnboardingMcps({ initialMcps, onAdvance }: Props): JSX.Element {
           next[b.slug] = {
             picked: existing !== undefined,
             envValues: {},
+            overrides: new Set<string>(),
             status: existing ? 'ok' : 'idle',
           };
         }
@@ -62,6 +65,16 @@ export function OnboardingMcps({ initialMcps, onAdvance }: Props): JSX.Element {
   }, []);
   const dropCard = useCallback((slug: string) => {
     setCards(c => ({ ...c, [slug]: { ...c[slug], picked: false, status: 'idle', errorMessage: undefined } }));
+  }, []);
+  const setOverride = useCallback((slug: string, key: string) => {
+    setCards(c => ({
+      ...c,
+      [slug]: {
+        ...c[slug],
+        overrides: new Set([...c[slug].overrides, key]),
+        envValues: { ...c[slug].envValues, [key]: '' },
+      },
+    }));
   }, []);
 
   const dropCustom = (idx: number) => {
@@ -155,20 +168,26 @@ export function OnboardingMcps({ initialMcps, onAdvance }: Props): JSX.Element {
       </p>
 
       <div className="flex flex-col gap-3">
-        {bundled.map((b) => (
-          <OnboardingMcpCard
-            key={b.slug}
-            bundled={b}
-            picked={cards[b.slug]?.picked ?? false}
-            envValues={cards[b.slug]?.envValues ?? {}}
-            onPath={pathInstalled.has(b.command)}
-            statusKind={cards[b.slug]?.status ?? 'idle'}
-            errorMessage={cards[b.slug]?.errorMessage}
-            onPickedChange={(p) => setPicked(b.slug, p)}
-            onEnvChange={(k, v) => setEnv(b.slug, k, v)}
-            onDrop={() => dropCard(b.slug)}
-          />
-        ))}
+        {(() => {
+          const envKeySet = new Set(detectedEnvKeys);
+          return bundled.map((b) => (
+            <OnboardingMcpCard
+              key={b.slug}
+              bundled={b}
+              picked={cards[b.slug]?.picked ?? false}
+              envValues={cards[b.slug]?.envValues ?? {}}
+              detectedEnvKeys={envKeySet}
+              overrides={cards[b.slug]?.overrides ?? new Set()}
+              onPath={pathInstalled.has(b.command)}
+              statusKind={cards[b.slug]?.status ?? 'idle'}
+              errorMessage={cards[b.slug]?.errorMessage}
+              onPickedChange={(p) => setPicked(b.slug, p)}
+              onEnvChange={(k, v) => setEnv(b.slug, k, v)}
+              onOverride={(k) => setOverride(b.slug, k)}
+              onDrop={() => dropCard(b.slug)}
+            />
+          ));
+        })()}
 
         {customs.map((c, idx) => (
           <div key={`custom-${idx}`} className={`p-4 border rounded ${c.status === 'error' ? 'border-error' : 'border-accent bg-accent/5'}`}>

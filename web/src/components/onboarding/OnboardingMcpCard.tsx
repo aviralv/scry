@@ -7,17 +7,20 @@ interface Props {
   bundled: BundledServerView;
   picked: boolean;
   envValues: Record<string, string>;
+  detectedEnvKeys: Set<string>;
+  overrides: Set<string>;
   onPath: boolean;
   statusKind: CardStatus;
   errorMessage?: string;
   onPickedChange: (picked: boolean) => void;
   onEnvChange: (key: string, value: string) => void;
+  onOverride: (key: string) => void;
   onDrop?: () => void;
 }
 
 export function OnboardingMcpCard({
-  bundled, picked, envValues, onPath, statusKind, errorMessage,
-  onPickedChange, onEnvChange, onDrop,
+  bundled, picked, envValues, detectedEnvKeys, overrides, onPath, statusKind, errorMessage,
+  onPickedChange, onEnvChange, onOverride, onDrop,
 }: Props): JSX.Element {
   return (
     <div className={`p-4 border rounded ${picked ? 'border-accent bg-accent/5' : 'border-border'}`}>
@@ -43,18 +46,40 @@ export function OnboardingMcpCard({
 
       {picked && bundled.envVars && bundled.envVars.length > 0 && (
         <div className="mt-3 ml-6 space-y-2">
-          {bundled.envVars.map((key) => (
-            <label key={key} className="flex items-center gap-3 text-sm">
-              <span className="font-mono text-xs text-text-secondary w-40 shrink-0">{key}</span>
-              <input
-                aria-label={key}
-                type="password"
-                value={envValues[key] ?? ''}
-                onChange={(e) => onEnvChange(key, e.target.value)}
-                className="bg-bg-elevated px-2 py-1 rounded flex-1 font-mono text-xs"
-              />
-            </label>
-          ))}
+          {bundled.envVars.map((key) => {
+            const isPrefilled = detectedEnvKeys.has(key) && !overrides.has(key);
+            return (
+              <label key={key} className="flex items-center gap-3 text-sm">
+                <span className="font-mono text-xs text-text-secondary w-40 shrink-0">{key}</span>
+                {isPrefilled ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      aria-label={key}
+                      type="text"
+                      value="(from .scry.env)"
+                      disabled
+                      className="bg-bg-elevated px-2 py-1 rounded flex-1 font-mono text-xs italic text-text-tertiary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onOverride(key)}
+                      className="text-xs underline text-text-tertiary"
+                    >
+                      Override
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    aria-label={key}
+                    type="password"
+                    value={envValues[key] ?? ''}
+                    onChange={(e) => onEnvChange(key, e.target.value)}
+                    className="bg-bg-elevated px-2 py-1 rounded flex-1 font-mono text-xs"
+                  />
+                )}
+              </label>
+            );
+          })}
         </div>
       )}
 

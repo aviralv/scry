@@ -90,6 +90,7 @@ export function Onboarding(): JSX.Element {
         {currentStep === 2 && (
           <OnboardingMcps
             initialMcps={state.mcps}
+            detectedEnvKeys={state.detectedEnvKeys}
             onAdvance={() => advanceFromStep(2)}
           />
         )}
