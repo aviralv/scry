@@ -45,6 +45,10 @@ function isPrivateIPv4(octets: number[]): SsrfReason | null {
   if (octets[0] === LINK_LOCAL_PREFIX[0] && octets[1] === LINK_LOCAL_PREFIX[1]) {
     return 'link-local-blocked';
   }
+  // Loopback 127.0.0.0/8 — the exact 127.0.0.1 case is already permitted by
+  // the isLocalhost carve-out upstream; any other 127.x.x.x is private.
+  if (octets[0] === 127) return 'private-address-blocked';
+  // RFC1918
   for (const [prefix, prefixLen] of RFC1918_RANGES) {
     if (prefixLen === 8 && octets[0] === prefix[0]) return 'private-address-blocked';
     if (prefixLen === 12 && octets[0] === prefix[0] && octets[1] >= 16 && octets[1] <= 31) {
@@ -54,6 +58,18 @@ function isPrivateIPv4(octets: number[]): SsrfReason | null {
       return 'private-address-blocked';
     }
   }
+  // 0.0.0.0/8 — "this network" / wildcard
+  if (octets[0] === 0) return 'private-address-blocked';
+  // 100.64.0.0/10 — CGNAT (100.64–100.127)
+  if (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) {
+    return 'private-address-blocked';
+  }
+  // 198.18.0.0/15 — benchmark testing (198.18–198.19)
+  if (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) {
+    return 'private-address-blocked';
+  }
+  // 224.0.0.0/4 multicast + 240.0.0.0/4 reserved (first octet 224–255)
+  if (octets[0] >= 224) return 'private-address-blocked';
   return null;
 }
 

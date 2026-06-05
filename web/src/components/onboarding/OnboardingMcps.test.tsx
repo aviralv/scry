@@ -147,4 +147,18 @@ describe('OnboardingMcps', () => {
       })
     ));
   });
+
+  it('trims leading/trailing whitespace from envValues before sending', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('MS365'));
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);  // pick MS365
+    fireEvent.change(screen.getByLabelText('MS365_CLIENT_ID'), { target: { value: '  abc-123  ' } });
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'ms365', envValues: { MS365_CLIENT_ID: 'abc-123' } })
+    ));
+  });
 });

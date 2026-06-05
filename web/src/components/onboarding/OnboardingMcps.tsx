@@ -131,7 +131,10 @@ export function OnboardingMcps({ initialMcps, detectedEnvKeys, onAdvance }: Prop
           await addOnboardingMcp({
             name: p.slug,
             command: p.bundled.command,
-            envValues: userTyped,
+            // Trim leading/trailing whitespace — pasted tokens often carry spaces.
+            envValues: Object.fromEntries(
+              Object.entries(userTyped).map(([k, v]) => [k, v.trim()])
+            ),
             envRefs,
           });
           setCards(c => ({ ...c, [p.slug]: { ...c[p.slug], status: 'ok' } }));

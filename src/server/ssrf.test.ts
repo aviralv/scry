@@ -13,6 +13,12 @@ describe('isAllowedBaseUrl', () => {
       ['http://127.0.0.1'],
       ['http://[::1]'],
       ['http://[::1]:8080'],
+      // Boundary: just below CGNAT range (100.63.x.x is public)
+      ['https://100.63.255.255'],
+      // Boundary: just above CGNAT range (100.128.x.x is public)
+      ['https://100.128.0.0'],
+      // Boundary: just above 198.18.0.0/15 benchmark range (198.20.x.x is public)
+      ['https://198.20.0.1'],
     ])('accepts %s', (url) => {
       expect(isAllowedBaseUrl(url)).toEqual({ ok: true });
     });
@@ -35,6 +41,25 @@ describe('isAllowedBaseUrl', () => {
       ['https://[fc00::1]', 'private-address-blocked'],
       ['not-a-url', 'invalid-url'],
       ['', 'invalid-url'],
+      // Loopback 127.0.0.0/8 — anything other than the exact 127.0.0.1 carve-out
+      ['https://127.0.1.1', 'private-address-blocked'],
+      ['https://127.1.2.3', 'private-address-blocked'],
+      ['https://127.255.255.255', 'private-address-blocked'],
+      // 0.0.0.0/8 — wildcard / "this network"
+      ['https://0.0.0.0', 'private-address-blocked'],
+      ['https://0.1.2.3', 'private-address-blocked'],
+      // 100.64.0.0/10 — CGNAT
+      ['https://100.64.0.1', 'private-address-blocked'],
+      ['https://100.127.255.255', 'private-address-blocked'],
+      // 198.18.0.0/15 — benchmark testing
+      ['https://198.18.0.1', 'private-address-blocked'],
+      ['https://198.19.255.255', 'private-address-blocked'],
+      // 224.0.0.0/4 — multicast
+      ['https://224.0.0.1', 'private-address-blocked'],
+      ['https://239.255.255.255', 'private-address-blocked'],
+      // 240.0.0.0/4 — reserved (broadcast etc.)
+      ['https://240.0.0.1', 'private-address-blocked'],
+      ['https://255.255.255.255', 'private-address-blocked'],
     ])('rejects %s with reason %s', (url, reason) => {
       const r = isAllowedBaseUrl(url);
       expect(r.ok).toBe(false);
