@@ -112,13 +112,26 @@ export function OnboardingMcps({ initialMcps, detectedEnvKeys, onAdvance }: Prop
       try {
         if (p.kind === 'bundled') {
           const allKeys = p.bundled.envVars ?? [];
+          const userTyped = p.state.envValues;
           const envRefs = allKeys.filter(k =>
             detectedEnvKeys.includes(k) && !p.state.overrides.has(k)
           );
+
+          // Validate: every required env key must be either prefilled (detected + not overridden)
+          // or user-typed (non-empty in envValues). A blank, non-detected key is a failure.
+          const missing = allKeys.filter(k =>
+            !envRefs.includes(k) && (!userTyped[k] || userTyped[k].trim() === '')
+          );
+          if (missing.length > 0) {
+            const msg = `Missing required env: ${missing.join(', ')}`;
+            setCards(c => ({ ...c, [p.slug]: { ...c[p.slug], status: 'error', errorMessage: msg } }));
+            return { ok: false, key: p.slug };
+          }
+
           await addOnboardingMcp({
             name: p.slug,
             command: p.bundled.command,
-            envValues: p.state.envValues,
+            envValues: userTyped,
             envRefs,
           });
           setCards(c => ({ ...c, [p.slug]: { ...c[p.slug], status: 'ok' } }));
