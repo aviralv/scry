@@ -255,4 +255,21 @@ describe('POST /api/onboarding/mcps', () => {
     expect(envOut).toContain('ATLASSIAN_EMAIL=old@x.com');    // unchanged
     expect(envOut).toContain('ATLASSIAN_API_TOKEN=newly-typed');  // new
   });
+
+  it('passes a 15s timeout to healthCheck (real MCP cold-start tolerance)', async () => {
+    writeFileSync(cfg, SEED_LLM_ONLY);
+    const r = await app.request('/api/onboarding/mcps', {
+      method: 'POST', headers: csrfHeaders,
+      body: JSON.stringify({
+        name: 'slack',
+        command: 'slack-mcp',
+        envValues: { SLACK_TOKEN: 'tok' },
+      }),
+    });
+    expect(r.status).toBe(201);
+    expect(healthCheckMock).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'slack-mcp' }),
+      expect.objectContaining({ timeoutMs: 15_000 })
+    );
+  });
 });

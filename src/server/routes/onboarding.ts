@@ -218,7 +218,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
         ...newServer,
         ...(Object.keys(probeEnv).length > 0 ? { env: probeEnv } : {}),
       };
-      const hc = await healthCheck(probeServer);
+      const hc = await healthCheck(probeServer, { timeoutMs: 15_000 });
       if (!hc.ok) return c.json({ error: 'health-check-failed', message: hc.error }, 422);
 
       // Two-phase write: env first, config second.

@@ -98,7 +98,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
       if (r.servers[name]) return c.json({ error: 'name-exists', message: `MCP "${name}" already exists` }, 409);
 
       // Health check outside the lock — it's expensive and shouldn't hold it.
-      const hc = await healthCheck(serverCfg);
+      const hc = await healthCheck(serverCfg, { timeoutMs: 15_000 });
       if (!hc.ok) return c.json({ error: 'health-check-failed', message: hc.error }, 422);
 
       try {
@@ -143,7 +143,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
       // Health check outside the lock — merge with optimistic snapshot for the
       // health check. The authoritative merge happens inside the lock below.
       const optimisticMerged: McpServerConfig = { ...r.servers[name], ...patch };
-      const hc = await healthCheck(optimisticMerged);
+      const hc = await healthCheck(optimisticMerged, { timeoutMs: 15_000 });
       if (!hc.ok) return c.json({ error: 'health-check-failed', message: hc.error }, 422);
 
       let finalMerged: McpServerConfig = optimisticMerged;

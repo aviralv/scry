@@ -141,6 +141,18 @@ describe('POST /api/mcps', () => {
     });
     expect(r.status).toBe(400);
   });
+
+  it('passes a 15s timeout to healthCheck (real MCP cold-start tolerance)', async () => {
+    const r = await app.request('/api/mcps', {
+      method: 'POST', headers: csrfHeaders,
+      body: JSON.stringify({ name: 'confluence', command: 'confluence-jira-mcp' }),
+    });
+    expect(r.status).toBe(201);
+    expect(healthCheckMock).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'confluence-jira-mcp' }),
+      expect.objectContaining({ timeoutMs: 15_000 })
+    );
+  });
 });
 
 describe('PATCH /api/mcps/:name', () => {
