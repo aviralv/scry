@@ -211,4 +211,48 @@ describe('POST /api/onboarding/mcps', () => {
     expect(cfgOut).toContain('custom-mcp:');
     expect(cfgOut).toMatch(/CUSTOM_TOKEN:\s*\$\{CUSTOM_TOKEN\}/);
   });
+
+  it('accepts envRefs for keys already in .scry.env (no .scry.env write)', async () => {
+    writeFileSync(cfg, SEED_LLM_ONLY);
+    writeFileSync(envPath, 'ATLASSIAN_URL=https://x\nATLASSIAN_API_TOKEN=tok\n');
+    const r = await app.request('/api/onboarding/mcps', {
+      method: 'POST', headers: csrfHeaders,
+      body: JSON.stringify({
+        name: 'confluence-jira',
+        command: 'confluence-jira-mcp',
+        envValues: {},
+        envRefs: ['ATLASSIAN_URL', 'ATLASSIAN_API_TOKEN'],
+      }),
+    });
+    expect(r.status).toBe(201);
+    const cfgOut = readFileSync(cfg, 'utf-8');
+    expect(cfgOut).toContain('confluence-jira:');
+    expect(cfgOut).toMatch(/ATLASSIAN_URL:\s*\$\{ATLASSIAN_URL\}/);
+    expect(cfgOut).toMatch(/ATLASSIAN_API_TOKEN:\s*\$\{ATLASSIAN_API_TOKEN\}/);
+    // .scry.env should still have its original values, not be overwritten
+    expect(readFileSync(envPath, 'utf-8')).toContain('ATLASSIAN_URL=https://x');
+  });
+
+  it('combines envValues and envRefs (override case)', async () => {
+    writeFileSync(cfg, SEED_LLM_ONLY);
+    writeFileSync(envPath, 'ATLASSIAN_URL=https://old\nATLASSIAN_EMAIL=old@x.com\n');
+    const r = await app.request('/api/onboarding/mcps', {
+      method: 'POST', headers: csrfHeaders,
+      body: JSON.stringify({
+        name: 'confluence-jira',
+        command: 'confluence-jira-mcp',
+        envValues: { ATLASSIAN_API_TOKEN: 'newly-typed' },
+        envRefs: ['ATLASSIAN_URL', 'ATLASSIAN_EMAIL'],
+      }),
+    });
+    expect(r.status).toBe(201);
+    const cfgOut = readFileSync(cfg, 'utf-8');
+    expect(cfgOut).toMatch(/ATLASSIAN_URL:\s*\$\{ATLASSIAN_URL\}/);
+    expect(cfgOut).toMatch(/ATLASSIAN_EMAIL:\s*\$\{ATLASSIAN_EMAIL\}/);
+    expect(cfgOut).toMatch(/ATLASSIAN_API_TOKEN:\s*\$\{ATLASSIAN_API_TOKEN\}/);
+    const envOut = readFileSync(envPath, 'utf-8');
+    expect(envOut).toContain('ATLASSIAN_URL=https://old');    // unchanged
+    expect(envOut).toContain('ATLASSIAN_EMAIL=old@x.com');    // unchanged
+    expect(envOut).toContain('ATLASSIAN_API_TOKEN=newly-typed');  // new
+  });
 });

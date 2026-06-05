@@ -83,6 +83,9 @@ describe('OnboardingMcps', () => {
   });
 
   it('skips env input when key is in detectedEnvKeys (prefill behavior)', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
     render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={['SLACK_TOKEN']} onAdvance={() => {}} />);
     await waitFor(() => screen.getByText('Slack'));
     fireEvent.click(screen.getAllByRole('checkbox')[0]);  // pick Slack
@@ -90,5 +93,15 @@ describe('OnboardingMcps', () => {
     const input = screen.getByLabelText('SLACK_TOKEN') as HTMLInputElement;
     expect(input.disabled).toBe(true);
     expect(input.value).toBe('(from .scry.env)');
+    // Continue without overriding — envRefs should carry the prefilled key
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'slack',
+        command: 'slack-mcp',
+        envValues: {},
+        envRefs: ['SLACK_TOKEN'],
+      })
+    ));
   });
 });

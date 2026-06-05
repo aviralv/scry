@@ -26,6 +26,7 @@ export interface AddOnboardingMcpInput {
   command: string;
   args?: string[];
   envValues: Record<string, string>;
+  envRefs?: string[];
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

@@ -17,6 +17,7 @@ const McpsBody = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
   envValues: z.record(z.string(), z.string()).default({}),
+  envRefs: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/)).default([]),
 });
 
 interface RouteDeps {
@@ -182,16 +183,18 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
         return c.json({ error: 'name-exists', message: `MCP "${parsed.data.name}" already exists` }, 409);
       }
 
-      // Build the MCP entry. envValues become ${VAR_NAME} refs in the env block;
-      // their literal values flow to .scry.env separately.
+      // Build the MCP entry. envValues + envRefs both become ${VAR_NAME} refs in the env
+      // block; envValues literal values flow to .scry.env separately; envRefs are already
+      // in .scry.env so no write needed.
+      const finalKeys = new Set([...Object.keys(parsed.data.envValues), ...parsed.data.envRefs]);
       const envBlock: Record<string, string> = {};
-      for (const k of Object.keys(parsed.data.envValues)) {
+      for (const k of finalKeys) {
         envBlock[k] = `\${${k}}`;
       }
       const newServer: McpServerConfig = {
         command: parsed.data.command,
         ...(parsed.data.args ? { args: parsed.data.args } : {}),
-        ...(Object.keys(envBlock).length > 0 ? { env: envBlock } : {}),
+        ...(finalKeys.size > 0 ? { env: envBlock } : {}),
       };
 
       // Validate the new entry shape against McpServerConfigSchema.
@@ -203,13 +206,17 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
         );
       }
 
-      // Health-check BEFORE any write. The probe uses the literal env values so
-      // the spawn can authenticate with what the user typed.
+      // Health-check BEFORE any write. The probe env combines:
+      // - envRefs as ${K} refs so resolveDeclaredEnv picks them up from process.env
+      //   (they're already in .scry.env which was loaded at boot)
+      // - envValues as literals for newly-typed values not yet on disk
+      const probeEnv: Record<string, string> = {
+        ...Object.fromEntries(parsed.data.envRefs.map(k => [k, `\${${k}}`])),
+        ...parsed.data.envValues,
+      };
       const probeServer: McpServerConfig = {
         ...newServer,
-        env: Object.keys(parsed.data.envValues).length > 0
-          ? { ...parsed.data.envValues }
-          : undefined,
+        ...(Object.keys(probeEnv).length > 0 ? { env: probeEnv } : {}),
       };
       const hc = await healthCheck(probeServer);
       if (!hc.ok) return c.json({ error: 'health-check-failed', message: hc.error }, 422);

@@ -111,10 +111,15 @@ export function OnboardingMcps({ initialMcps, detectedEnvKeys, onAdvance }: Prop
     const promises = allPicked.map(async (p) => {
       try {
         if (p.kind === 'bundled') {
+          const allKeys = p.bundled.envVars ?? [];
+          const envRefs = allKeys.filter(k =>
+            detectedEnvKeys.includes(k) && !p.state.overrides.has(k)
+          );
           await addOnboardingMcp({
             name: p.slug,
             command: p.bundled.command,
             envValues: p.state.envValues,
+            envRefs,
           });
           setCards(c => ({ ...c, [p.slug]: { ...c[p.slug], status: 'ok' } }));
           return { ok: true, key: p.slug };
