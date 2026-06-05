@@ -1,0 +1,41 @@
+# Synthesis eval — verbatim affiliation preservation
+#
+# When a source DOES specify a role/title, answer should preserve it
+# verbatim (or at least reasonably). This is the "don't be too aggressive
+# with the rule" check — we don't want to strip legitimate labels either.
+
+query: "Who's been weighing in on the new onboarding flow?"
+
+sources:
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#design-review"
+      snippet: "Priya Raman, Senior Designer: I've been iterating on the onboarding mocks — v3 is in Figma."
+      author: "Priya Raman"
+      timestamp: "2026-05-28T11:00:00Z"
+      url: "https://slack.example.com/archives/C200/p2000"
+  - server: confluence-jira
+    tool: confluence_search
+    payload:
+      title: "Onboarding redesign — kickoff notes"
+      snippet: "Attendees: Priya Raman (Design), Tom Becker (PM). Discussed scope and timeline."
+      author: "Tom Becker"
+      timestamp: "2026-05-27T15:00:00Z"
+      url: "https://confluence.example.com/x/onboarding-kickoff"
+
+# Forbidden: making up labels not in sources.
+forbidden_patterns:
+  # "(Engineering)" or "(VP)" or anything fabricated for either person.
+  - "Priya Raman \\((?:Engineering|Eng|VP|Director|Lead|Marketing)\\b"
+  - "Tom Becker \\((?:Engineering|Eng|VP|Director|Lead|Designer|Marketing)\\b"
+
+# Sources contain "(Design)" and "(PM)" — these are fine to use.
+required_patterns:
+  - "Priya Raman"
+  - "Tom Becker"
+
+notes: |
+  Source 2 has "Priya Raman (Design)" and "Tom Becker (PM)" verbatim —
+  the answer using these is correct. Bug is fabricating different ones
+  (e.g. "Priya Raman (Engineering)").

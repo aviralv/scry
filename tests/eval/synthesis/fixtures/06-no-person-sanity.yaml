@@ -1,0 +1,37 @@
+# Synthesis eval — non-person query (sanity check)
+#
+# Make sure the prompt rule doesn't break unrelated queries. Tests that
+# the model still produces a reasonable cited answer when no people
+# attribution is involved.
+
+query: "What did the team decide about the database migration timeline?"
+
+sources:
+  - server: confluence-jira
+    tool: confluence_search
+    payload:
+      title: "Database migration — RFC v2"
+      snippet: "Decision: migrate to Postgres 16 in two phases. Phase 1 (read replicas) lands in Q2; phase 2 (primary cutover) in Q3."
+      author: "rfc-bot"
+      timestamp: "2026-05-15T10:00:00Z"
+      url: "https://confluence.example.com/x/db-rfc"
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#eng-decisions"
+      snippet: "Approved by leads. RFC merged. Q2 phase 1 work starts next sprint."
+      author: "rfc-bot"
+      timestamp: "2026-05-16T14:00:00Z"
+      url: "https://slack.example.com/archives/C500/p5000"
+
+# No person attribution, so no forbidden person-affiliation patterns.
+# We just check that the answer is non-trivial and cites something.
+forbidden_patterns: []
+
+required_patterns:
+  - "Postgres|database|migration"
+  - "\\[1\\]|\\[2\\]"
+
+notes: |
+  Sanity: the prompt nudge shouldn't break general synthesis. Answer
+  should mention the migration and cite at least one source.

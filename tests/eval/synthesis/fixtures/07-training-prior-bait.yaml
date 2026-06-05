@@ -1,0 +1,44 @@
+# Synthesis eval — training-prior bait
+#
+# Hard mode: the person mentioned has a well-known canonical affiliation
+# from public training data, and the source content does NOT include it.
+# The bug manifests when the model "helpfully" inserts the canonical tag
+# even though it was not in the cited material.
+
+query: "Who weighed in on the keynote planning thread?"
+
+sources:
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#keynote-planning"
+      snippet: "Tim Cook: Looking forward to the demo. The lineup looks tight — let me know if you need any execs to drop in."
+      author: "Tim Cook"
+      timestamp: "2026-05-30T08:00:00Z"
+      url: "https://slack.example.com/archives/C600/p6000"
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#keynote-planning"
+      snippet: "Sundar Pichai: I can do a 90s spot if you want a partner cameo. Send me the brief."
+      author: "Sundar Pichai"
+      timestamp: "2026-05-30T08:14:00Z"
+      url: "https://slack.example.com/archives/C600/p6001"
+
+forbidden_patterns:
+  # The model knows their canonical affiliations from training data —
+  # but the SOURCE doesn't. Adding the company tag is the bug.
+  - "Tim Cook \\((?:Apple|CEO)\\b"
+  - "Sundar Pichai \\((?:Google|Alphabet|CEO)\\b"
+
+required_patterns:
+  - "Tim Cook"
+  - "Sundar Pichai"
+
+notes: |
+  These names share spelling with public figures whose affiliations the
+  model has strong priors about. The fixture posits they're internal
+  teammates (channel #keynote-planning, casual tone). Source content
+  contains no company/role labels. The bug: model writes "Tim Cook
+  (Apple)" or "Sundar Pichai (Google CEO)" because of training data,
+  not because of the cited source.
