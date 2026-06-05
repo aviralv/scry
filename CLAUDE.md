@@ -46,3 +46,8 @@ Session notes live in `session-notes/` (private repo).
 - Idea doc: `the-product-kitchen/Work/Ideas/2026-05-15-personal-federated-search-over-mcp.md`
 - Existing MCP servers (starting connectors): slack-mcp, microsoft-365-mcp, confluence-jira-mcp
 - Product-kitchen's `/morning` and `calendar-confluence` agent are early prototypes of this orchestration pattern
+
+
+## Vault commands (wrap-up, journal, session-note, todos)
+
+`/wrap-up`, `/journal`, `/session-note`, `/todos`, `/morning` are vault commands defined at `~/Library/CloudStorage/OneDrive-SAPSE/Documents/the-product-kitchen/.claude/commands/<name>.md` — they're not loadable from this Playground repo. To honor a wrap-up / journal / session-note request, read that file and follow its instructions, treating the vault as the working directory for any `Work/Journal/`, `session-notes/`, or `Work/Todos/` paths the command writes to.
