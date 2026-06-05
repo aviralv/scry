@@ -46,7 +46,19 @@ export async function runLlmTest(input: LlmTestInput, opts: LlmTestOpts = {}): P
     'content-type': 'application/json',
     'anthropic-version': '2023-06-01',
   };
-  if (tokenResult.value) headers['x-api-key'] = tokenResult.value;
+  if (tokenResult.value) {
+    // Detect auth style by ref name when input.auth_token is a ${REF}.
+    const refName = (input.auth_token ?? '').match(ENV_REF_RE)?.[1] ?? '';
+    if (refName.includes('AUTH_TOKEN')) {
+      headers['Authorization'] = `Bearer ${tokenResult.value}`;
+    } else if (refName.includes('API_KEY')) {
+      headers['x-api-key'] = tokenResult.value;
+    } else {
+      // Literal token (or unrecognized ref shape) — send both, let server pick.
+      headers['x-api-key'] = tokenResult.value;
+      headers['Authorization'] = `Bearer ${tokenResult.value}`;
+    }
+  }
 
   const body = JSON.stringify({
     model: input.model,

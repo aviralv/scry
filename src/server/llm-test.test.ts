@@ -11,7 +11,9 @@ describe('runLlmTest', () => {
   });
   afterEach(() => {
     globalThis.fetch = origFetch;
-    delete process.env.SCRY_TEST_TOKEN;
+    delete process.env.SCRY_TEST_AUTH_TOKEN;
+    delete process.env.MY_AUTH_TOKEN;
+    delete process.env.MY_API_KEY;
   });
 
   it('returns ok on a successful Anthropic-shaped response', async () => {
@@ -23,6 +25,7 @@ describe('runLlmTest', () => {
     expect(url).toBe('https://api.anthropic.com/v1/messages');
     const headers = new Headers((init as RequestInit).headers);
     expect(headers.get('x-api-key')).toBe('sk-abc');
+    expect(headers.get('authorization')).toBe('Bearer sk-abc');
     expect(headers.get('anthropic-version')).toBeTruthy();
   });
 
@@ -51,14 +54,39 @@ describe('runLlmTest', () => {
     }
   });
 
-  it('resolves a ${REF} auth_token from process.env', async () => {
-    process.env.SCRY_TEST_TOKEN = 'resolved-value';
+  it('resolves a ${REF} auth_token from process.env (AUTH_TOKEN → Bearer)', async () => {
+    process.env.SCRY_TEST_AUTH_TOKEN = 'resolved-value';
     fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
-    const r = await runLlmTest({ base_url: 'https://api.anthropic.com', model: 'm', auth_token: '${SCRY_TEST_TOKEN}' });
+    const r = await runLlmTest({ base_url: 'https://api.anthropic.com', model: 'm', auth_token: '${SCRY_TEST_AUTH_TOKEN}' });
     expect(r.ok).toBe(true);
     const [, init] = fetchMock.mock.calls[0];
     const headers = new Headers((init as RequestInit).headers);
-    expect(headers.get('x-api-key')).toBe('resolved-value');
+    expect(headers.get('authorization')).toBe('Bearer resolved-value');
+    expect(headers.has('x-api-key')).toBe(false);
+  });
+
+  it('uses Authorization: Bearer for ${*_AUTH_TOKEN} refs', async () => {
+    process.env.MY_AUTH_TOKEN = 'tok-xyz';
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    const r = await runLlmTest({ base_url: 'http://localhost:6655/anthropic/', model: 'm', auth_token: '${MY_AUTH_TOKEN}' });
+    expect(r.ok).toBe(true);
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers((init as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer tok-xyz');
+    expect(headers.has('x-api-key')).toBe(false);
+    delete process.env.MY_AUTH_TOKEN;
+  });
+
+  it('uses x-api-key for ${*_API_KEY} refs', async () => {
+    process.env.MY_API_KEY = 'sk-xyz';
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    const r = await runLlmTest({ base_url: 'https://api.anthropic.com', model: 'm', auth_token: '${MY_API_KEY}' });
+    expect(r.ok).toBe(true);
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers((init as RequestInit).headers);
+    expect(headers.get('x-api-key')).toBe('sk-xyz');
+    expect(headers.has('authorization')).toBe(false);
+    delete process.env.MY_API_KEY;
   });
 
   it('returns ok=false when ${REF} is not in process.env', async () => {

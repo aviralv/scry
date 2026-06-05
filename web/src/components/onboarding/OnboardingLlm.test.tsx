@@ -33,12 +33,17 @@ describe('OnboardingLlm', () => {
     expect(screen.getByText(/detected/i)).toBeTruthy();
   });
 
-  it('shows the no-auth-required checkbox for localhost base_url, default-checked', () => {
+  it('prefills auth field with ${ANTHROPIC_AUTH_TOKEN} when detected (preferred over API_KEY)', () => {
+    render(<OnboardingLlm {...baseProps} detectedRefs={['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']} />);
+    expect((screen.getByLabelText(/auth/i) as HTMLInputElement).value).toBe('${ANTHROPIC_AUTH_TOKEN}');
+  });
+
+  it('shows the no-auth-required checkbox for localhost base_url, default-unchecked', () => {
     render(<OnboardingLlm {...baseProps} />);
     fireEvent.change(screen.getByLabelText(/base url/i), { target: { value: 'http://localhost:6655/anthropic/' } });
     const cb = screen.getByLabelText(/no auth required/i) as HTMLInputElement;
     expect(cb).toBeTruthy();
-    expect(cb.checked).toBe(true);
+    expect(cb.checked).toBe(false);
   });
 
   it('runs llm test then PUTs on Continue and calls onAdvance', async () => {

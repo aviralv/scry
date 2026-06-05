@@ -1,4 +1,4 @@
-import { useState, useEffect, type JSX, type FormEvent } from 'react';
+import { useState, type JSX, type FormEvent } from 'react';
 import type { OnboardingLlm as OnboardingLlmState } from '../../lib/onboarding.js';
 import { putLlm, testLlm } from '../../lib/llm.js';
 import { skipStep } from '../../lib/onboarding.js';
@@ -14,21 +14,18 @@ const ENV_REF_RE = /^\$\{[A-Z][A-Z0-9_]*\}$/;
 
 export function OnboardingLlm({ initialLlm, detectedRefs, onAdvance }: Props): JSX.Element {
   const [baseUrl, setBaseUrl] = useState(initialLlm?.base_url ?? 'https://api.anthropic.com');
-  const detectedAnthropic = detectedRefs.includes('ANTHROPIC_API_KEY');
-  const [authToken, setAuthToken] = useState(detectedAnthropic ? '${ANTHROPIC_API_KEY}' : '');
+  const detectedAnthropicApiKey = detectedRefs.includes('ANTHROPIC_API_KEY');
+  const detectedAnthropicAuthToken = detectedRefs.includes('ANTHROPIC_AUTH_TOKEN');
+  const detectedAnthropic = detectedAnthropicApiKey || detectedAnthropicAuthToken;
+  const [authToken, setAuthToken] = useState(
+    detectedAnthropicAuthToken ? '${ANTHROPIC_AUTH_TOKEN}' :
+    detectedAnthropicApiKey ? '${ANTHROPIC_API_KEY}' :
+    ''
+  );
   const [model, setModel] = useState(initialLlm?.model ?? 'claude-haiku-4-5-20251001');
-  const [noAuth, setNoAuth] = useState(LOCALHOST_RE.test(initialLlm?.base_url ?? 'https://api.anthropic.com'));
+  const [noAuth, setNoAuth] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // When base_url changes, recompute the noAuth default.
-  useEffect(() => {
-    if (LOCALHOST_RE.test(baseUrl)) {
-      setNoAuth(true);
-    } else {
-      setNoAuth(false);
-    }
-  }, [baseUrl]);
 
   const isLocal = LOCALHOST_RE.test(baseUrl);
 

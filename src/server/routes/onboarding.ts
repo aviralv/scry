@@ -59,6 +59,7 @@ function readEnvKeys(envPath: string): string[] {
 
 const WELL_KNOWN_ENV_REFS = [
   'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
   'SLACK_TOKEN',
   'MS365_CLIENT_ID',
   'ATLASSIAN_URL',

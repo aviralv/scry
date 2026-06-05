@@ -88,11 +88,13 @@ describe('GET /api/onboarding', () => {
 
   it('reports detected env keys from .scry.env (no values)', async () => {
     writeFileSync(cfg, SEED_FRESH);
-    writeFileSync(envPath, 'SLACK_TOKEN=xoxb-secret\nMS365_CLIENT_ID=abc\n');
+    writeFileSync(envPath, 'SLACK_TOKEN=xoxb-secret\nMS365_CLIENT_ID=abc\nANTHROPIC_AUTH_TOKEN=tok\n');
     const r = await app.request('/api/onboarding');
     const body = await r.json();
-    expect(body.detectedEnvKeys).toEqual(expect.arrayContaining(['SLACK_TOKEN', 'MS365_CLIENT_ID']));
+    expect(body.detectedEnvKeys).toEqual(expect.arrayContaining(['SLACK_TOKEN', 'MS365_CLIENT_ID', 'ANTHROPIC_AUTH_TOKEN']));
+    expect(body.detectedRefs).toContain('ANTHROPIC_AUTH_TOKEN');
     expect(JSON.stringify(body)).not.toContain('xoxb-secret');
+    expect(JSON.stringify(body)).not.toContain('tok');
   });
 });
 
