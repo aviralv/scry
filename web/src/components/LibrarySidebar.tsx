@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, type JSX } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { SessionRow as SessionRowData } from '@shared/types.js';
 import { listSessions, patchSession, deleteSession } from '../lib/sessions.js';
+import { getOnboardingState } from '../lib/onboarding.js';
 import { SessionRow } from './SessionRow.js';
 
 interface Props {
@@ -43,6 +44,7 @@ export function LibrarySidebar({ activeSessionId, refreshKey, onSelect, onNewSea
   const [rows, setRows] = useState<SessionRowData[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -57,6 +59,14 @@ export function LibrarySidebar({ activeSessionId, refreshKey, onSelect, onNewSea
   useEffect(() => {
     void refresh();
   }, [refresh, refreshKey]);
+
+  useEffect(() => {
+    let alive = true;
+    getOnboardingState()
+      .then((s) => { if (alive) setShowOnboarding(!s.onboarding.completed); })
+      .catch(() => { if (alive) setShowOnboarding(true); });
+    return () => { alive = false; };
+  }, [refreshKey]);
 
   const handleRename = useCallback(async (id: string, newTitle: string) => {
     try {
@@ -133,6 +143,16 @@ export function LibrarySidebar({ activeSessionId, refreshKey, onSelect, onNewSea
         >
           Registry
         </NavLink>
+        {showOnboarding && (
+          <NavLink
+            to="/onboarding"
+            className={({ isActive }: { isActive: boolean }) =>
+              `px-2 py-1 rounded ${isActive ? 'bg-accent text-bg-primary' : 'text-accent hover:bg-accent/10'}`
+            }
+          >
+            Onboarding
+          </NavLink>
+        )}
       </div>
       <button
         type="button"
