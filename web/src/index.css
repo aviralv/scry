@@ -10,3 +10,86 @@ html, body, #root {
   color: var(--scry-text-primary);
   font-family: var(--scry-sans);
 }
+
+/*
+ * Markdown-rendered answer styling.
+ *
+ * Targets only descendants of .answer-stream so we don't leak styles into
+ * the rest of the app. Prefers the project's CSS-variable tokens — keep in
+ * sync with theme/tokens.css.
+ */
+.answer-stream p {
+  margin: 0 0 0.75em 0;
+}
+.answer-stream p:last-child {
+  margin-bottom: 0;
+}
+.answer-stream h1,
+.answer-stream h2,
+.answer-stream h3,
+.answer-stream h4,
+.answer-stream h5,
+.answer-stream h6 {
+  font-weight: 600;
+  margin: 1em 0 0.4em 0;
+  line-height: 1.3;
+}
+.answer-stream h1 { font-size: 1.25rem; }
+.answer-stream h2 { font-size: 1.15rem; }
+.answer-stream h3 { font-size: 1.05rem; }
+.answer-stream h4,
+.answer-stream h5,
+.answer-stream h6 { font-size: 1rem; }
+.answer-stream strong { font-weight: 600; }
+.answer-stream em { font-style: italic; }
+.answer-stream ul,
+.answer-stream ol {
+  margin: 0 0 0.75em 0;
+  padding-left: 1.5em;
+}
+.answer-stream ul { list-style: disc; }
+.answer-stream ol { list-style: decimal; }
+.answer-stream li {
+  margin: 0.15em 0;
+}
+.answer-stream li > p {
+  margin: 0;
+}
+.answer-stream a {
+  color: var(--scry-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.answer-stream a:hover {
+  color: var(--scry-accent-dim);
+}
+.answer-stream code {
+  font-family: var(--scry-mono);
+  font-size: 0.9em;
+  background: var(--scry-bg-elevated);
+  padding: 0.1em 0.35em;
+  border-radius: var(--scry-radius-sm);
+}
+.answer-stream pre {
+  background: var(--scry-bg-elevated);
+  padding: 0.75em 1em;
+  border-radius: var(--scry-radius-md);
+  overflow-x: auto;
+  margin: 0 0 0.75em 0;
+}
+.answer-stream pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.answer-stream blockquote {
+  border-left: 3px solid var(--scry-border);
+  padding-left: 1em;
+  margin: 0 0 0.75em 0;
+  color: var(--scry-text-secondary);
+}
+.answer-stream hr {
+  border: 0;
+  border-top: 1px solid var(--scry-divider);
+  margin: 1em 0;
+}
