@@ -75,4 +75,10 @@ describe('OnboardingMcps', () => {
     await waitFor(() => expect(vi.mocked(onboardingLib.skipStep)).toHaveBeenCalledWith('mcps'));
     await waitFor(() => expect(onAdvance).toHaveBeenCalled());
   });
+
+  it('shows globalError when discoverMcps fails', async () => {
+    vi.mocked(discoverLib.discoverMcps).mockRejectedValue(new Error('discover broke'));
+    render(<OnboardingMcps initialMcps={[]} onAdvance={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/discover broke/i)).toBeTruthy());
+  });
 });

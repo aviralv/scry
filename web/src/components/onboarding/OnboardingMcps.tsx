@@ -33,21 +33,25 @@ export function OnboardingMcps({ initialMcps, onAdvance }: Props): JSX.Element {
   const [globalError, setGlobalError] = useState<string | null>(null);
 
   useEffect(() => {
-    void discoverMcps().then((r) => {
-      setBundled(r.bundled);
-      setPathInstalled(new Set(r.pathInstalled));
-      // Pre-pick MCPs already in initialMcps (re-entry).
-      const next: Record<string, CardState> = {};
-      for (const b of r.bundled) {
-        const existing = initialMcps.find(m => m.name === b.slug);
-        next[b.slug] = {
-          picked: existing !== undefined,
-          envValues: {},
-          status: existing ? 'ok' : 'idle',
-        };
-      }
-      setCards(next);
-    });
+    void discoverMcps()
+      .then((r) => {
+        setBundled(r.bundled);
+        setPathInstalled(new Set(r.pathInstalled));
+        // Pre-pick MCPs already in initialMcps (re-entry).
+        const next: Record<string, CardState> = {};
+        for (const b of r.bundled) {
+          const existing = initialMcps.find(m => m.name === b.slug);
+          next[b.slug] = {
+            picked: existing !== undefined,
+            envValues: {},
+            status: existing ? 'ok' : 'idle',
+          };
+        }
+        setCards(next);
+      })
+      .catch((err) => {
+        setGlobalError((err as Error).message ?? 'Failed to load MCP list');
+      });
   }, [initialMcps]);
 
   const setPicked = useCallback((slug: string, picked: boolean) => {
