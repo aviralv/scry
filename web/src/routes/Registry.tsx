@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, type JSX } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Navigate } from 'react-router-dom';
 import { ApiCallError } from '../lib/api.js';
 import { getRegistry, putRegistry } from '../lib/registry.js';
 import type { Registry as RegistryT, Person, Project, ApiErrorIssue } from '@shared/types.js';
@@ -128,11 +128,7 @@ export function Registry(): JSX.Element {
   };
 
   if (needsConfig) {
-    return (
-      <div className="p-6 text-text-tertiary">
-        No config yet. Run scry through onboarding first.
-      </div>
-    );
+    return <Navigate to="/onboarding" replace />;
   }
 
   if (!working) {

@@ -19,3 +19,21 @@ describe('bundled-servers', () => {
     expect(findBundledServer('unknown-mcp')).toBeUndefined();
   });
 });
+
+describe('BUNDLED_SERVERS slugs', () => {
+  it('every entry has a slug matching the McpServersMap SLUG regex', () => {
+    const SLUG = /^[a-z][a-z0-9_-]{0,63}$/;
+    for (const s of BUNDLED_SERVERS) {
+      expect(SLUG.test(s.slug), `${s.name} has slug "${s.slug}"`).toBe(true);
+    }
+  });
+
+  it('slugs are unique', () => {
+    const slugs = BUNDLED_SERVERS.map(s => s.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it('exposes the expected canonical slugs', () => {
+    expect(BUNDLED_SERVERS.map(s => s.slug).sort()).toEqual(['confluence-jira', 'ms365', 'slack']);
+  });
+});

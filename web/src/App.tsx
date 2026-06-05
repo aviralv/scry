@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { LibrarySidebar } from './components/LibrarySidebar.js';
+import { RequireOnboarding } from './components/RequireOnboarding.js';
 import { Search } from './routes/Search.js';
 import { McpManager } from './routes/McpManager.js';
 import { Registry } from './routes/Registry.js';
+import { Onboarding } from './routes/Onboarding.js';
 
 export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
@@ -28,15 +30,18 @@ export default function App() {
             <Route
               path="/"
               element={
-                <Search
-                  activeSessionId={activeSessionId}
-                  onSessionStarted={handleSessionStarted}
-                  onSessionDone={handleSessionDone}
-                />
+                <RequireOnboarding>
+                  <Search
+                    activeSessionId={activeSessionId}
+                    onSessionStarted={handleSessionStarted}
+                    onSessionDone={handleSessionDone}
+                  />
+                </RequireOnboarding>
               }
             />
-            <Route path="/mcps" element={<McpManager />} />
-            <Route path="/registry" element={<Registry />} />
+            <Route path="/mcps" element={<RequireOnboarding><McpManager /></RequireOnboarding>} />
+            <Route path="/registry" element={<RequireOnboarding><Registry /></RequireOnboarding>} />
+            <Route path="/onboarding" element={<Onboarding />} />
           </Routes>
         </main>
       </div>

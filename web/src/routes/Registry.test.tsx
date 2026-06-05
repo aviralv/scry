@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { Registry } from './Registry.js';
 import * as api from '../lib/registry.js';
 import { ApiCallError } from '../lib/api.js';
@@ -16,17 +16,20 @@ beforeEach(() => {
 const renderWithRouter = (search = '') =>
   render(
     <MemoryRouter initialEntries={[{ pathname: '/registry', search }]}>
-      <Registry />
+      <Routes>
+        <Route path="/registry" element={<Registry />} />
+        <Route path="/onboarding" element={<div>onboarding page</div>} />
+      </Routes>
     </MemoryRouter>,
   );
 
 describe('Registry', () => {
-  it('shows onboarding stub on 412', async () => {
+  it('redirects to /onboarding on 412', async () => {
     vi.mocked(api.getRegistry).mockRejectedValue(
       new ApiCallError(412, { error: 'config-required' }),
     );
     renderWithRouter();
-    await waitFor(() => expect(screen.getByText(/onboarding/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/onboarding page/i)).toBeInTheDocument());
   });
 
   it('renders People tab by default', async () => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, type JSX } from 'react';
+import { Navigate } from 'react-router-dom';
 import { ApiCallError } from '../lib/api.js';
 import {
   listMcps, createMcp, updateMcp, deleteMcp, testMcp,
@@ -69,11 +70,7 @@ export function McpManager(): JSX.Element {
   }, [refresh]);
 
   if (needsConfig) {
-    return (
-      <div className="p-6 text-text-tertiary">
-        No config yet. Run scry through onboarding first.
-      </div>
-    );
+    return <Navigate to="/onboarding" replace />;
   }
 
   return (

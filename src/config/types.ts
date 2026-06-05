@@ -1,6 +1,6 @@
 export interface LlmConfig {
   base_url: string;
-  auth_token: string;
+  auth_token?: string;
   model: string;
 }
 
@@ -22,6 +22,7 @@ export interface ScryConfig {
   mcp_servers: Record<string, McpServerConfig>;
   search_tools: Record<string, SearchToolConfig[]>;
   registry?: Registry;
+  onboarding?: Onboarding;
 }
 
 export interface PersonIdentifiers {
@@ -57,6 +58,12 @@ export interface Registry {
   projects: Record<string, Project>;
 }
 
+export interface Onboarding {
+  completed: boolean;
+  llm_skipped?: boolean;
+  mcps_skipped?: boolean;
+}
+
 export interface SearchResult {
   source: string;
   title: string;
@@ -90,6 +97,7 @@ export interface SynthesisResult {
 
 export interface BundledServer {
   name: string;
+  slug: string;        // canonical slug used as the mcp_servers.<key> entry key
   command: string;
   githubUrl: string;
   description: string;

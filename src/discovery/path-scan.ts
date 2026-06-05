@@ -14,7 +14,7 @@ export function scanPathForServers(which: (cmd: string) => string | null = which
   return BUNDLED_SERVERS
     .filter(s => which(s.command) !== null)
     .map(s => ({
-      name: s.name.toLowerCase().replace(/\s+&?\s*/g, '-'),
+      name: s.slug,
       command: s.command,
       args: [],
       env: {},

@@ -1,9 +1,11 @@
 // web/src/routes/Search.tsx
 import { useState, useRef, useCallback, useEffect, type JSX } from 'react';
+import { Link } from 'react-router-dom';
 import type { RunQueryEvent, SourceCard } from '@shared/types.js';
 import { apiFetch } from '../lib/api.js';
 import { consumeStream } from '../lib/stream.js';
 import { getSession } from '../lib/sessions.js';
+import { getOnboardingState, type OnboardingState } from '../lib/onboarding.js';
 import { SearchInput } from '../components/SearchInput.js';
 import { TurnBlock } from '../components/TurnBlock.js';
 
@@ -41,6 +43,14 @@ export function Search({ activeSessionId, onSessionStarted, onSessionDone }: Pro
   const abortRef = useRef<AbortController | null>(null);
   const loadedIdRef = useRef<string | undefined>(undefined);
   const ownSessionIdRef = useRef<string | undefined>(undefined);
+
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
+  useEffect(() => {
+    void getOnboardingState().then(setOnboarding).catch(() => {});
+  }, []);
+
+  const llmBannerNeeded = onboarding?.onboarding.llm_skipped === true && onboarding.llm == null;
+  const mcpsBannerNeeded = onboarding?.onboarding.mcps_skipped === true && onboarding.mcps.length === 0;
 
   // Mirror state.sessionId into a ref so the activeSessionId effect can read it
   // without depending on `state` (which would re-fire on every state change
@@ -222,6 +232,18 @@ export function Search({ activeSessionId, onSessionStarted, onSessionDone }: Pro
 
   return (
     <div className="search-page p-8 max-w-4xl mx-auto">
+      {llmBannerNeeded && (
+        <div role="status" className="mb-4 p-3 bg-warning/10 border border-warning rounded text-sm">
+          LLM not configured — searches will fail until you complete LLM setup.{' '}
+          <Link to="/onboarding?step=1" className="underline">Configure now →</Link>
+        </div>
+      )}
+      {mcpsBannerNeeded && (
+        <div role="status" className="mb-4 p-3 bg-warning/10 border border-warning rounded text-sm">
+          No MCPs configured — search has no sources.{' '}
+          <Link to="/onboarding?step=2" className="underline">Configure now →</Link>
+        </div>
+      )}
       <h1 className="text-2xl font-sans text-text-primary mb-6">
         <span className="text-accent">s</span>cry
       </h1>

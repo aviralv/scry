@@ -1,0 +1,164 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { OnboardingMcps } from './OnboardingMcps.js';
+import * as discoverLib from '../../lib/mcps-discover.js';
+import * as onboardingLib from '../../lib/onboarding.js';
+
+vi.mock('../../lib/mcps-discover.js');
+vi.mock('../../lib/onboarding.js');
+
+const bundled = [
+  { name: 'Slack', slug: 'slack', command: 'slack-mcp', githubUrl: 'https://github.com/aviralv/slack-mcp', description: 'Slack search and DMs', envVars: ['SLACK_TOKEN'] },
+  { name: 'MS365', slug: 'ms365', command: 'ms365-intent-mcp', githubUrl: 'https://x', description: 'Microsoft 365 integration', envVars: ['MS365_CLIENT_ID'] },
+];
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(discoverLib.discoverMcps).mockResolvedValue({
+    bundled,
+    pathInstalled: ['slack-mcp', 'ms365-intent-mcp'],
+  });
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+});
+afterEach(() => vi.restoreAllMocks());
+
+describe('OnboardingMcps', () => {
+  it('renders all bundled cards on mount', async () => {
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Slack')).toBeTruthy());
+    expect(screen.getByText('MS365')).toBeTruthy();
+  });
+
+  it('does NOT call addOnboardingMcp when nothing is picked and Continue is clicked', async () => {
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    expect(vi.mocked(onboardingLib.addOnboardingMcp)).not.toHaveBeenCalled();
+  });
+
+  it('runs addOnboardingMcp for each picked card and advances on success', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    const onAdvance = vi.fn();
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={onAdvance} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);  // pick Slack
+    fireEvent.change(screen.getByLabelText('SLACK_TOKEN'), { target: { value: 'tok' } });
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'slack', command: 'slack-mcp', envValues: { SLACK_TOKEN: 'tok' } })
+    ));
+    await waitFor(() => expect(onAdvance).toHaveBeenCalled());
+  });
+
+  it('shows per-card error and allows Drop & continue when health-check fails', async () => {
+    const { ApiCallError } = await import('../../lib/api.js');
+    vi.mocked(onboardingLib.addOnboardingMcp).mockRejectedValueOnce(
+      new ApiCallError(422, { error: 'health-check-failed', message: 'spawn failed' })
+    );
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.change(screen.getByLabelText('SLACK_TOKEN'), { target: { value: 'bad' } });
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(screen.getByText(/spawn failed/)).toBeTruthy());
+    expect(screen.getByRole('button', { name: /drop.*continue/i })).toBeTruthy();
+  });
+
+  it('Skip calls skipStep("mcps") and advances', async () => {
+    vi.mocked(onboardingLib.skipStep).mockResolvedValue({ completed: false, mcps_skipped: true });
+    const onAdvance = vi.fn();
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={onAdvance} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getByRole('button', { name: /configure mcps later/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.skipStep)).toHaveBeenCalledWith('mcps'));
+    await waitFor(() => expect(onAdvance).toHaveBeenCalled());
+  });
+
+  it('shows globalError when discoverMcps fails', async () => {
+    vi.mocked(discoverLib.discoverMcps).mockRejectedValue(new Error('discover broke'));
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/discover broke/i)).toBeTruthy());
+  });
+
+  it('blocks Test & Continue for picked card with missing env values (no network call)', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    // SLACK_TOKEN NOT in detectedEnvKeys, NOT typed by user
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);  // pick Slack with no input
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(screen.getByText(/missing required env: SLACK_TOKEN/i)).toBeTruthy());
+    expect(vi.mocked(onboardingLib.addOnboardingMcp)).not.toHaveBeenCalled();
+  });
+
+  it('does NOT block when envValue is provided', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    const onAdvance = vi.fn();
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={onAdvance} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.change(screen.getByLabelText('SLACK_TOKEN'), { target: { value: 'tok' } });
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'slack', envValues: { SLACK_TOKEN: 'tok' } })
+    ));
+    await waitFor(() => expect(onAdvance).toHaveBeenCalled());
+  });
+
+  it('does NOT block when env key is in detectedEnvKeys (prefilled)', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={['SLACK_TOKEN']} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    // Don't override; rely on prefill
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'slack', envValues: {}, envRefs: ['SLACK_TOKEN'] })
+    ));
+  });
+
+  it('skips env input when key is in detectedEnvKeys (prefill behavior)', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={['SLACK_TOKEN']} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('Slack'));
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);  // pick Slack
+    // The env field for SLACK_TOKEN should be in prefilled state
+    const input = screen.getByLabelText('SLACK_TOKEN') as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+    expect(input.value).toBe('(from .scry.env)');
+    // Continue without overriding — envRefs should carry the prefilled key
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'slack',
+        command: 'slack-mcp',
+        envValues: {},
+        envRefs: ['SLACK_TOKEN'],
+      })
+    ));
+  });
+
+  it('trims leading/trailing whitespace from envValues before sending', async () => {
+    vi.mocked(onboardingLib.addOnboardingMcp).mockImplementation(async (input) => ({
+      name: input.name, command: input.command, enabled: true,
+    }));
+    render(<OnboardingMcps initialMcps={[]} detectedEnvKeys={[]} onAdvance={() => {}} />);
+    await waitFor(() => screen.getByText('MS365'));
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);  // pick MS365
+    fireEvent.change(screen.getByLabelText('MS365_CLIENT_ID'), { target: { value: '  abc-123  ' } });
+    fireEvent.click(screen.getByRole('button', { name: /test.*continue/i }));
+    await waitFor(() => expect(vi.mocked(onboardingLib.addOnboardingMcp)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'ms365', envValues: { MS365_CLIENT_ID: 'abc-123' } })
+    ));
+  });
+});

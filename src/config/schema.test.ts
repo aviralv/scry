@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { McpServerConfigSchema, RegistrySchema, PersonSchema, ProjectSchema, McpServersMapSchema } from './schema.js';
+import { McpServerConfigSchema, RegistrySchema, PersonSchema, ProjectSchema, McpServersMapSchema, LlmConfigSchema, OnboardingSchema } from './schema.js';
 
 describe('McpServerConfigSchema', () => {
   it('accepts a minimal valid entry', () => {
@@ -132,6 +132,72 @@ describe('McpServersMapSchema', () => {
     const r = McpServersMapSchema.safeParse({
       'BAD KEY': { command: 'x' },
     });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('LlmConfigSchema', () => {
+  it('accepts a config with all three fields', () => {
+    const r = LlmConfigSchema.safeParse({
+      base_url: 'https://api.anthropic.com',
+      auth_token: '${ANTHROPIC_API_KEY}',
+      model: 'claude-haiku-4-5-20251001',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts a config without auth_token (proxy case)', () => {
+    const r = LlmConfigSchema.safeParse({
+      base_url: 'http://localhost:6655/anthropic/',
+      model: 'claude-haiku-4-5-20251001',
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects a non-URL base_url', () => {
+    const r = LlmConfigSchema.safeParse({
+      base_url: 'not-a-url',
+      model: 'm',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects an empty model', () => {
+    const r = LlmConfigSchema.safeParse({
+      base_url: 'https://api.anthropic.com',
+      model: '',
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects an auth_token that is neither ${REF} nor safe-literal', () => {
+    const r = LlmConfigSchema.safeParse({
+      base_url: 'https://api.anthropic.com',
+      auth_token: 'has spaces',
+      model: 'm',
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('OnboardingSchema', () => {
+  it('defaults completed to false on empty input', () => {
+    const r = OnboardingSchema.safeParse({});
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.completed).toBe(false);
+  });
+
+  it('accepts skip flags', () => {
+    const r = OnboardingSchema.safeParse({
+      completed: false,
+      llm_skipped: true,
+      mcps_skipped: false,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects non-boolean completed', () => {
+    const r = OnboardingSchema.safeParse({ completed: 'yes' });
     expect(r.success).toBe(false);
   });
 });

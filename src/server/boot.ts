@@ -1,11 +1,13 @@
 import { serve } from '@hono/node-server';
 import type { Server } from 'http';
+import { existsSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { createServer } from './index.js';
 import { generateCsrfToken } from './middleware/csrf-token.js';
 import { resolveConfigPath } from '../config/loader.js';
 import { loadDotEnvFile } from '../config/dotenv.js';
 import { SessionsStore } from '../storage/sessions.js';
+import { runOnboardingAutocomplete } from './migrations/onboarding-autocomplete.js';
 
 export interface BootOptions {
   port: number;
@@ -16,13 +18,26 @@ export interface BootOptions {
  * Rejects on EADDRINUSE or other listen failures so the CLI can surface a
  * structured error instead of crashing later.
  */
-export function startServer(opts: BootOptions): Promise<Server> {
+export async function startServer(opts: BootOptions): Promise<Server> {
   generateCsrfToken();
   const configPath = resolveConfigPath();
   // Log the resolved config path so a stale cwd-precedence config doesn't
   // silently shadow the XDG config without anyone noticing. Caught in the
   // wild during Plan E smoke; logging closes the surprise window.
   console.log(`scry: config = ${configPath}`);
+
+  // Bootstrap an empty config for brand-new users so wizard endpoints
+  // (which require existsSync(configPath)) don't 412-loop. The skeleton
+  // includes `llm: {}` so loadConfig produces a typed-shape object instead
+  // of undefined — any code path that accesses config.llm.* won't TypeError
+  // on users who open the wizard, close without completing Step 1, then run
+  // e.g. `scry search`. The wizard's GET /api/onboarding already treats
+  // llm: {} the same as absent (both yield llm: null in the response).
+  if (!existsSync(configPath)) {
+    console.log(`scry: creating empty config at ${configPath}`);
+    writeFileSync(configPath, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
+  }
+
   const configDir = dirname(configPath);
 
   // Load .scry.env once at boot so health-check spawns can resolve declared
@@ -30,6 +45,9 @@ export function startServer(opts: BootOptions): Promise<Server> {
   // loads cause no harm; what we cannot tolerate is *not* loading it before
   // /api/mcps/:name/test runs.
   loadDotEnvFile(join(configDir, '.scry.env'));
+
+  // One-time migration for pre-G configs (idempotent).
+  await runOnboardingAutocomplete(configPath);
 
   const sessionsStore = new SessionsStore(join(configDir, 'scry.db'));
 
