@@ -21,8 +21,8 @@ export class ConfigValidationError extends Error {
 }
 
 export class ConfigNameExistsError extends Error {
-  constructor(public name: string) {
-    super(`MCP "${name}" already exists`);
+  constructor(public mcpName: string) {
+    super(`MCP "${mcpName}" already exists`);
     this.name = 'ConfigNameExistsError';
   }
 }

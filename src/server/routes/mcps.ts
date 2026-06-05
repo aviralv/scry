@@ -112,7 +112,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
         });
       } catch (err) {
         if (err instanceof ConfigNameExistsError) {
-          return c.json({ error: 'name-exists', message: `MCP "${err.name}" already exists` }, 409);
+          return c.json({ error: 'name-exists', message: `MCP "${err.mcpName}" already exists` }, 409);
         }
         if (err instanceof ConfigValidationError) {
           return c.json({ error: 'invalid-body', errors: err.issues }, 400);

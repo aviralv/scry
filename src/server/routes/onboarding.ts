@@ -248,7 +248,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
       } catch (err) {
         if (err instanceof ConfigNameExistsError) {
           return c.json(
-            { error: 'name-exists', message: `MCP "${err.name}" already exists` },
+            { error: 'name-exists', message: `MCP "${err.mcpName}" already exists` },
             409,
           );
         }
