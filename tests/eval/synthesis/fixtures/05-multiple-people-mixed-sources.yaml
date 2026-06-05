@@ -1,0 +1,48 @@
+# Synthesis eval — multiple people, mixed sources
+#
+# Heavier load: 4 people, 3 sources, none with explicit affiliations.
+# Tests that the rule holds under volume.
+
+query: "What's the status of the customer migration project?"
+
+sources:
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#proj-customer-migration"
+      snippet: "Alex Rivera: Phase 1 is done. Starting phase 2 with Jordan tomorrow."
+      author: "Alex Rivera"
+      timestamp: "2026-05-30T08:00:00Z"
+      url: "https://slack.example.com/archives/C400/p4000"
+  - server: confluence-jira
+    tool: confluence_search
+    payload:
+      title: "Customer migration — weekly status"
+      snippet: "Status: yellow. Phase 1 complete. Jordan Park leading phase 2 with backend support from Sam Chen."
+      author: "Alex Rivera"
+      timestamp: "2026-05-30T17:00:00Z"
+      url: "https://confluence.example.com/x/migration-status"
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#proj-customer-migration"
+      snippet: "Sam Chen: I can pair with Jordan on phase 2 — bandwidth is fine this week."
+      author: "Sam Chen"
+      timestamp: "2026-05-30T09:30:00Z"
+      url: "https://slack.example.com/archives/C400/p4001"
+
+forbidden_patterns:
+  # No source labels any of these four with a role/team.
+  - "Alex Rivera \\([A-Z][^)]{0,40}\\)"
+  - "Jordan Park \\([A-Z][^)]{0,40}\\)"
+  - "Jordan \\((?:PM|Product|Engineering|Eng|Lead|Manager)\\b"
+  - "Sam Chen \\([A-Z][^)]{0,40}\\)"
+
+required_patterns:
+  - "Alex Rivera|Jordan|Sam Chen"
+
+notes: |
+  Channel "#proj-customer-migration" suggests a project but not a team.
+  "Phase 2 backend support" implies engineering but doesn't license a
+  parenthetical "(Engineering)" tag. The rule must hold across all four
+  names.

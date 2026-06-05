@@ -1,0 +1,30 @@
+# Synthesis eval — email "from" line is identity, not affiliation
+#
+# Email author lines often look like "Name <name@company.com>". The
+# domain shouldn't be turned into a parenthetical company tag.
+
+query: "What did the engineering team say about the deploy delay?"
+
+sources:
+  - server: ms365
+    tool: outlook_list_messages
+    payload:
+      title: "Re: Deploy slipping to next sprint"
+      snippet: "Diana Kowalski wrote: We hit a flaky integration test on the staging cluster. I want one more day to root-cause before merging."
+      author: "Diana Kowalski <diana.kowalski@example.com>"
+      timestamp: "2026-05-31T16:45:00Z"
+      url: "https://outlook.example.com/m/abc123"
+
+forbidden_patterns:
+  # Domain-derived company tag.
+  - "Diana Kowalski \\(example(?:\\.com)?\\)"
+  # Inferred-team tag.
+  - "Diana Kowalski \\((?:Engineering|Eng|DevOps|SRE|Platform)\\b"
+
+required_patterns:
+  - "Diana Kowalski"
+
+notes: |
+  Email "from" header has the company domain in it. The model must not
+  turn "diana.kowalski@example.com" into "Diana Kowalski (example.com)"
+  or guess "(Engineering)" from the deploy/staging context.

@@ -22,7 +22,8 @@
     "dev:server": "tsc --watch",
     "dev:web": "cd web && npm run dev",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval:synthesis": "tsx scripts/eval-synthesis.ts"
   },
   "engines": {
     "node": ">=20"

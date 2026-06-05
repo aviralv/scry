@@ -1,0 +1,30 @@
+# Synthesis eval — channel context must not imply affiliation
+#
+# Real bug shape from C1 smoke test: source is in a LeanIX-internal channel
+# and the model added "(PMI)" / "(LeanIX)" to a person's name. Channel
+# membership is NOT affiliation evidence.
+
+query: "Who asked about activating the new agent in the platform?"
+
+sources:
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#leanix-pm-internal"
+      snippet: "Katja Westphal: how do I turn on the new compliance agent in our LeanIX workspace?"
+      author: "Katja Westphal"
+      timestamp: "2026-05-29T09:14:00Z"
+      url: "https://slack.example.com/archives/C300/p3000"
+
+forbidden_patterns:
+  # Any parenthetical company/team tag tacked onto the name.
+  - "Katja Westphal \\((?:LeanIX|PMI|SAP|Product|Engineering|Eng|Customer)[^)]*\\)"
+
+required_patterns:
+  - "Katja Westphal"
+
+notes: |
+  This is the C1 smoke regression. Channel name is "#leanix-pm-internal"
+  but the source content gives no affiliation tag for Katja. The bug was
+  Claude appending "(PMI)" because it inferred from training data or
+  channel context. Both are forbidden.
