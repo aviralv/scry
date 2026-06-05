@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import type { Server } from 'http';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { createServer } from './index.js';
 import { generateCsrfToken } from './middleware/csrf-token.js';
@@ -35,6 +35,10 @@ export async function startServer(opts: BootOptions): Promise<Server> {
   // llm: {} the same as absent (both yield llm: null in the response).
   if (!existsSync(configPath)) {
     console.log(`scry: creating empty config at ${configPath}`);
+    // Ensure the parent directory exists. With a fresh XDG_CONFIG_HOME
+    // (or first-ever scry boot on a clean machine), `~/.config/scry/`
+    // doesn't exist yet — writeFileSync would ENOENT without this.
+    mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(configPath, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
   }
 

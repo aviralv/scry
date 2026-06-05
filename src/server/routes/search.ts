@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { resolveConfigPath, loadConfig } from '../../config/loader.js';
 import { runQuery } from '../../engine/runQuery.js';
+import { mockRunQuery } from '../../engine/mock-runQuery.js';
 import type { RunQueryEvent } from '../../engine/types.js';
 import type { SessionsStore } from '../../storage/sessions.js';
 import type { StoredTurn } from '../../storage/types.js';
@@ -69,7 +70,11 @@ export function buildSearchRoute(store: SessionsStore): Hono {
       let sessionId: string | undefined = undefined;
 
       try {
-        const queryStream = runQuery({
+        // SCRY_SEARCH_MOCK=1 swaps in a deterministic generator for E2E
+        // tests. Never set in production. Same RunQueryEvent shape so the
+        // route, persistence, and client code exercise their real paths.
+        const queryFn = process.env.SCRY_SEARCH_MOCK === '1' ? mockRunQuery : runQuery;
+        const queryStream = queryFn({
           prompt: body.query,
           config,
           scryConfigDir,

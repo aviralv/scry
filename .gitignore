@@ -14,3 +14,9 @@ dist/
 
 # Visual brainstorming companion
 .superpowers/
+
+# Playwright artifacts
+/playwright-report/
+/test-results/
+/playwright/.cache/
+*.tsbuildinfo
