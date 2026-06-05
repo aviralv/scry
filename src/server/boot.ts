@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import type { Server } from 'http';
+import { existsSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { createServer } from './index.js';
 import { generateCsrfToken } from './middleware/csrf-token.js';
@@ -24,6 +25,16 @@ export async function startServer(opts: BootOptions): Promise<Server> {
   // silently shadow the XDG config without anyone noticing. Caught in the
   // wild during Plan E smoke; logging closes the surprise window.
   console.log(`scry: config = ${configPath}`);
+
+  // Bootstrap an empty config for brand-new users so wizard endpoints
+  // (which require existsSync(configPath)) don't 412-loop. The skeleton
+  // intentionally omits an `llm:` block — the wizard derives Step 1 from
+  // llm: null and PUT /api/llm populates it on first use.
+  if (!existsSync(configPath)) {
+    console.log(`scry: creating empty config at ${configPath}`);
+    writeFileSync(configPath, 'mcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
+  }
+
   const configDir = dirname(configPath);
 
   // Load .scry.env once at boot so health-check spawns can resolve declared
