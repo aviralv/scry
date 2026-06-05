@@ -28,11 +28,14 @@ export async function startServer(opts: BootOptions): Promise<Server> {
 
   // Bootstrap an empty config for brand-new users so wizard endpoints
   // (which require existsSync(configPath)) don't 412-loop. The skeleton
-  // intentionally omits an `llm:` block — the wizard derives Step 1 from
-  // llm: null and PUT /api/llm populates it on first use.
+  // includes `llm: {}` so loadConfig produces a typed-shape object instead
+  // of undefined — any code path that accesses config.llm.* won't TypeError
+  // on users who open the wizard, close without completing Step 1, then run
+  // e.g. `scry search`. The wizard's GET /api/onboarding already treats
+  // llm: {} the same as absent (both yield llm: null in the response).
   if (!existsSync(configPath)) {
     console.log(`scry: creating empty config at ${configPath}`);
-    writeFileSync(configPath, 'mcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
+    writeFileSync(configPath, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
   }
 
   const configDir = dirname(configPath);

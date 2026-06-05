@@ -16,12 +16,14 @@ afterEach(() => {
 });
 
 describe('startServer', () => {
-  it('creates an empty config when none exists', async () => {
+  it('creates an empty config with llm: {} when none exists', async () => {
     const cfg = process.env.SCRY_CONFIG!;
     expect(existsSync(cfg)).toBe(false);
     const server = await startServer({ port: 0 });
     expect(existsSync(cfg)).toBe(true);
-    expect(readFileSync(cfg, 'utf-8')).toContain('mcp_servers');
+    const content = readFileSync(cfg, 'utf-8');
+    expect(content).toContain('mcp_servers');
+    expect(content).toContain('llm');
     server.close();
   });
 

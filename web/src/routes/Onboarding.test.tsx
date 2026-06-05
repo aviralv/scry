@@ -86,4 +86,23 @@ describe('Onboarding route — step derivation', () => {
     fireEvent.click(llmButtons[0]);
     await waitFor(() => expect(screen.getByText(/Step 1/)).toBeTruthy());
   });
+
+  it('does NOT honor URL ?step=3 when llm is null (cannot skip ahead)', async () => {
+    vi.mocked(onboardingLib.getOnboardingState).mockResolvedValue(fresh);
+    renderAt('/onboarding?step=3');
+    // Derived step is 1 (no llm); URL says 3 — should land on Step 1, not Step 3.
+    await waitFor(() => expect(screen.getByText(/Step 1/)).toBeTruthy());
+  });
+
+  it('does honor URL ?step=1 when current is Step 3 (can go back)', async () => {
+    vi.mocked(onboardingLib.getOnboardingState).mockResolvedValue({
+      ...fresh,
+      llm: { base_url: 'x', model: 'y', hasAuth: true },
+      mcps: [{ name: 'slack', command: 'slack-mcp', enabled: true }],
+      onboarding: { completed: true },
+    });
+    renderAt('/onboarding?step=1');
+    // Derived step is 3 (completed); URL says 1 — going back is allowed.
+    await waitFor(() => expect(screen.getByText(/Step 1/)).toBeTruthy());
+  });
 });

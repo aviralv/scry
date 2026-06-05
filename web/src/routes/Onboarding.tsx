@@ -54,7 +54,13 @@ export function Onboarding(): JSX.Element {
 
   const stepParam = searchParams.get('step');
   const urlStep = stepParam === '1' ? 1 : stepParam === '2' ? 2 : stepParam === '3' ? 3 : null;
-  const currentStep: Step = urlStep ?? deriveStep(state);
+  const derived = deriveStep(state);
+  // URL may navigate *back* to a completed step but must not skip *ahead* of
+  // the derived state — e.g. ?step=3 with no LLM configured would render
+  // OnboardingConfirm with empty state and let the user finalize a broken config.
+  const currentStep: Step = urlStep
+    ? (Math.min(urlStep, derived) as Step)
+    : derived;
 
   const goToStep = (n: Step) => {
     setSearchParams({ step: String(n) });
