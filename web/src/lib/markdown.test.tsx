@@ -41,12 +41,49 @@ describe('splitCitations', () => {
     const sup = screen.getByText('[3]');
     expect(sup.tagName.toLowerCase()).toBe('sup');
     expect(sup.getAttribute('data-cite')).toBe('3');
+    expect(sup.getAttribute('role')).toBe('button');
+    expect(sup.getAttribute('tabindex')).toBe('0');
+    expect(sup.getAttribute('aria-label')).toBe('Citation 3');
     fireEvent.mouseEnter(sup);
     expect(onHover).toHaveBeenCalledWith(3);
     fireEvent.mouseLeave(sup);
     expect(onHover).toHaveBeenCalledWith(null);
     fireEvent.click(sup);
     expect(onClick).toHaveBeenCalledWith(3);
+  });
+
+  it('activates citation on Enter key', () => {
+    const onClick = vi.fn();
+    render(<p>{splitCitations('cite [4]', 'k', undefined, onClick)}</p>);
+    const sup = screen.getByText('[4]');
+    fireEvent.keyDown(sup, { key: 'Enter' });
+    expect(onClick).toHaveBeenCalledWith(4);
+  });
+
+  it('activates citation on Space key', () => {
+    const onClick = vi.fn();
+    render(<p>{splitCitations('cite [5]', 'k', undefined, onClick)}</p>);
+    const sup = screen.getByText('[5]');
+    fireEvent.keyDown(sup, { key: ' ' });
+    expect(onClick).toHaveBeenCalledWith(5);
+  });
+
+  it('does not activate citation on other keys', () => {
+    const onClick = vi.fn();
+    render(<p>{splitCitations('cite [6]', 'k', undefined, onClick)}</p>);
+    const sup = screen.getByText('[6]');
+    fireEvent.keyDown(sup, { key: 'a' });
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('fires hover via focus/blur for keyboard users', () => {
+    const onHover = vi.fn();
+    render(<p>{splitCitations('cite [9]', 'k', onHover)}</p>);
+    const sup = screen.getByText('[9]');
+    fireEvent.focus(sup);
+    expect(onHover).toHaveBeenCalledWith(9);
+    fireEvent.blur(sup);
+    expect(onHover).toHaveBeenCalledWith(null);
   });
 
   it('does not split numbers without brackets', () => {
@@ -113,10 +150,15 @@ describe('createMarkdownComponents — markdown rendering', () => {
 
   it('renders safe http(s) links', () => {
     renderMd('[example](https://example.com)');
-    const a = screen.getByRole('link', { name: 'example' });
+    const a = screen.getByRole('link', { name: /example/ });
     expect(a.getAttribute('href')).toBe('https://example.com/');
     expect(a.getAttribute('target')).toBe('_blank');
     expect(a.getAttribute('rel')).toBe('noreferrer noopener');
+  });
+
+  it('announces new-tab links to screen readers', () => {
+    renderMd('[example](https://example.com)');
+    expect(screen.getByText(/opens in a new tab/i)).toBeInTheDocument();
   });
 
   it('strips javascript: hrefs but keeps the text', () => {
@@ -128,5 +170,23 @@ describe('createMarkdownComponents — markdown rendering', () => {
   it('strips data: hrefs but keeps the text', () => {
     renderMd('[evil](data:text/html,<script>alert(1)</script>)');
     expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('renders bracket notation inside inline code verbatim (no citation)', () => {
+    renderMd('use `array[1]` to access the first element');
+    const code = screen.getByText('array[1]');
+    expect(code.tagName.toLowerCase()).toBe('code');
+    // The bracketed text inside code must NOT be a citation sup.
+    expect(code.querySelector('sup[data-cite]')).toBeNull();
+  });
+
+  it('does not render images', () => {
+    renderMd('![alt text](https://example.com/x.png)');
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
+  it('does not render data: image URLs even via markdown image syntax', () => {
+    renderMd('![evil](data:image/svg+xml,<svg onload=alert(1)/>)');
+    expect(screen.queryByRole('img')).toBeNull();
   });
 });

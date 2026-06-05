@@ -12,20 +12,31 @@
 // `splitCitations` is exported as a pure helper for unit tests.
 //
 // `a` is overridden to run hrefs through `sanitizeUrl` — same scheme policy
-// as SourceCard. Rejected URLs render as plain text.
+// as SourceCard. Rejected URLs render as plain text. New-tab links carry a
+// visually-hidden announcement so screen-reader users hear the behavior.
+//
+// `code` is intentionally NOT overridden — bracket notation in code spans
+// (e.g. `array[1]`) must render verbatim, not as a citation.
+//
+// `img` is explicitly disabled — the LLM never produces image markdown today,
+// and forbidding it now closes a future XSS vector (e.g. `data:image/svg+xml`
+// with embedded script) without affecting any current rendering.
 
-import { Children, type ReactNode } from 'react';
+import { Children, type KeyboardEvent, type ReactNode } from 'react';
 import type { Components } from 'react-markdown';
 import { sanitizeUrl } from './sanitize.js';
 
 export type CiteHover = (index: number | null) => void;
 export type CiteClick = (index: number) => void;
 
-const CITE_RE = /\[(\d+)\]/g;
+// Source pattern only — every call constructs a fresh global regex from
+// `.source` so module-level `lastIndex` state can never leak.
+const CITE_RE_SOURCE = '\\[(\\d+)\\]';
 
 /**
  * Split a string into text and citation nodes. `[N]` markers become `<sup>`
- * elements with hover/click handlers; surrounding text is kept verbatim.
+ * elements with hover/click handlers and Enter/Space activation; surrounding
+ * text is kept verbatim.
  *
  * Pure and synchronous — safe to use in render. Returns ReactNode[] always
  * (caller decides whether to wrap or splice).
@@ -37,21 +48,32 @@ export function splitCitations(
   onCiteClick?: CiteClick,
 ): ReactNode[] {
   const parts: ReactNode[] = [];
-  // Reset lastIndex per call so the global regex doesn't leak state across calls.
-  const re = new RegExp(CITE_RE.source, 'g');
+  const re = new RegExp(CITE_RE_SOURCE, 'g');
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     const idx = Number(m[1]);
+    const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onCiteClick?.(idx);
+      }
+    };
     parts.push(
       <sup
         key={`${keyPrefix}-${m.index}`}
         data-cite={idx}
-        className="text-accent font-mono cursor-pointer mx-0.5"
+        role="button"
+        tabIndex={0}
+        aria-label={`Citation ${idx}`}
+        className="text-accent font-mono cursor-pointer mx-0.5 focus:outline-none focus:ring-2 focus:ring-accent rounded"
         onMouseEnter={() => onCiteHover?.(idx)}
         onMouseLeave={() => onCiteHover?.(null)}
+        onFocus={() => onCiteHover?.(idx)}
+        onBlur={() => onCiteHover?.(null)}
         onClick={() => onCiteClick?.(idx)}
+        onKeyDown={onKeyDown}
       >
         [{idx}]
       </sup>,
@@ -87,7 +109,8 @@ function walkChildrenForCitations(
 /**
  * Build a `components` map for react-markdown that:
  *   1. Replaces `[N]` markers with citation `<sup>` elements at any depth.
- *   2. Sanitizes anchor hrefs (rejects javascript:/data:/file:).
+ *   2. Sanitizes anchor hrefs (rejects javascript:/data:/file:/etc.).
+ *   3. Disables image rendering.
  */
 export function createMarkdownComponents(
   onCiteHover?: CiteHover,
@@ -96,6 +119,9 @@ export function createMarkdownComponents(
   // Tags that contain text and need citation walking. We override each
   // explicitly so the default react-markdown renderer doesn't bypass us
   // on nested elements (e.g. a `<strong>` inside a `<p>`).
+  //
+  // `code` is deliberately omitted — bracket notation inside code spans
+  // (e.g. `array[1]`) must render verbatim, not as a citation marker.
   const wrap = (Tag: keyof JSX.IntrinsicElements) =>
     function MarkdownNode({ node: _node, children, ...rest }: any) {
       const walked = walkChildrenForCitations(children, Tag as string, onCiteHover, onCiteClick);
@@ -114,9 +140,13 @@ export function createMarkdownComponents(
     h5: wrap('h5'),
     h6: wrap('h6'),
     blockquote: wrap('blockquote'),
-    code: wrap('code'),
     td: wrap('td'),
     th: wrap('th'),
+    // Suppress image rendering. react-markdown would otherwise emit a raw
+    // <img>; an attacker who can shape the synthesized answer could point
+    // it at data: URLs or external trackers. Disabling outright is the
+    // safest default; re-enable with a sanitized loader if/when needed.
+    img: () => null,
     a: function MarkdownAnchor({ node: _node, href, children, ...rest }: any) {
       const safe = sanitizeUrl(typeof href === 'string' ? href : undefined);
       const walked = walkChildrenForCitations(children, 'a', onCiteHover, onCiteClick);
@@ -127,6 +157,8 @@ export function createMarkdownComponents(
       return (
         <a {...rest} href={safe} target="_blank" rel="noreferrer noopener">
           {walked}
+          {/* WCAG 3.2.2: announce that the link opens a new tab. */}
+          <span className="sr-only"> (opens in a new tab)</span>
         </a>
       );
     },
