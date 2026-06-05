@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { resolveConfigPath, loadConfig } from '../../config/loader.js';
 import { runQuery } from '../../engine/runQuery.js';
+import { mockRunQuery } from '../../engine/mock-runQuery.js';
 import type { RunQueryEvent } from '../../engine/types.js';
 import type { SessionsStore } from '../../storage/sessions.js';
 import type { StoredTurn } from '../../storage/types.js';
@@ -14,6 +15,36 @@ const BodySchema = z.object({
   fanoutMode: z.boolean().optional(),
   sessionId: z.string().min(1).optional(),
 });
+
+/**
+ * Should the search route use the deterministic mock instead of the real
+ * engine?
+ *
+ * The gate requires BOTH:
+ *   1. SCRY_SEARCH_MOCK=1 explicitly set
+ *   2. NODE_ENV !== 'production' — defense against an accidental .env or
+ *      container environment leaking the var into a real deployment.
+ *
+ * Logged once at boot when active so the operator can see it in stderr.
+ */
+let mockWarningEmitted = false;
+function shouldUseMock(): boolean {
+  const enabled = process.env.SCRY_SEARCH_MOCK === '1';
+  const safe = process.env.NODE_ENV !== 'production';
+  if (enabled && safe && !mockWarningEmitted) {
+    mockWarningEmitted = true;
+    console.warn(
+      'scry: SCRY_SEARCH_MOCK=1 active — search route returns canned results, NOT a real engine call. Unset to use the real engine.',
+    );
+  }
+  if (enabled && !safe && !mockWarningEmitted) {
+    mockWarningEmitted = true;
+    console.warn(
+      'scry: SCRY_SEARCH_MOCK=1 set but NODE_ENV=production — ignoring mock flag (real engine will be used).',
+    );
+  }
+  return enabled && safe;
+}
 
 export function buildSearchRoute(store: SessionsStore): Hono {
   return new Hono().post('/', async (c) => {
@@ -69,7 +100,10 @@ export function buildSearchRoute(store: SessionsStore): Hono {
       let sessionId: string | undefined = undefined;
 
       try {
-        const queryStream = runQuery({
+        // SCRY_SEARCH_MOCK=1 swaps in a deterministic generator for E2E
+        // tests. Compound-gated by NODE_ENV — see shouldUseMock() above.
+        const queryFn = shouldUseMock() ? mockRunQuery : runQuery;
+        const queryStream = queryFn({
           prompt: body.query,
           config,
           scryConfigDir,

@@ -15,5 +15,11 @@ dist/
 # Visual brainstorming companion
 .superpowers/
 
+# Playwright artifacts
+/playwright-report/
+/test-results/
+/playwright/.cache/
+*.tsbuildinfo
+
 # Eval result artifacts (use EVAL_OUTPUT to write here)
 /eval-results/

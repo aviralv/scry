@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     globals: true,
     testTimeout: 15000,
-    exclude: ['**/node_modules/**', '**/dist/**', 'web/**', '.claude/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'web/**', '.claude/**', 'e2e/**'],
   },
 });

@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import type { Server } from 'http';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { createServer } from './index.js';
 import { generateCsrfToken } from './middleware/csrf-token.js';
@@ -35,7 +35,31 @@ export async function startServer(opts: BootOptions): Promise<Server> {
   // llm: {} the same as absent (both yield llm: null in the response).
   if (!existsSync(configPath)) {
     console.log(`scry: creating empty config at ${configPath}`);
-    writeFileSync(configPath, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
+    // Ensure the parent directory exists. With a fresh XDG_CONFIG_HOME
+    // (or first-ever scry boot on a clean machine), `~/.config/scry/`
+    // doesn't exist yet — writeFileSync would ENOENT without this.
+    //
+    // Wrap mkdirSync + writeFileSync in try/catch: on EACCES (read-only
+    // mounts, root-owned dirs in Docker, locked-down enterprise machines)
+    // an unhandled throw crashes the server with a stack trace that
+    // doesn't tell the user what went wrong. Surface a clean error and
+    // exit deliberately.
+    try {
+      mkdirSync(dirname(configPath), { recursive: true });
+      writeFileSync(configPath, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n', 'utf-8');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const reason =
+        code === 'EACCES' ? 'permission denied' :
+        code === 'EROFS' ? 'read-only filesystem' :
+        code === 'ENOENT' ? 'parent directory does not exist' :
+        (err as Error).message;
+      console.error(
+        `scry: cannot create config at ${configPath}: ${reason}.\n` +
+          `       Set XDG_CONFIG_HOME to a writable directory, or use SCRY_CONFIG to point at an existing config.`,
+      );
+      throw new Error(`scry boot: config bootstrap failed (${reason})`);
+    }
   }
 
   const configDir = dirname(configPath);

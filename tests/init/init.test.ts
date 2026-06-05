@@ -8,6 +8,7 @@ import {
   formatDotEnv,
   ensureGitignored,
 } from '../../src/init/init.js';
+import type { DiscoveredServer } from '../../src/discovery/claude-config.js';
 
 describe('generateConfig', () => {
   it('builds unified config from selected servers', () => {
@@ -95,7 +96,7 @@ describe('extractEnvSecrets', () => {
   });
 
   it('handles mixed literal and placeholder values across servers', () => {
-    const servers = [
+    const servers: DiscoveredServer[] = [
       { name: 'a', command: 'a', args: [], env: { KEY1: 'literal', KEY2: '${KEY2}' } },
       { name: 'b', command: 'b', args: [], env: { KEY3: 'another' } },
     ];

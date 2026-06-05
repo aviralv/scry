@@ -1,0 +1,10 @@
+{
+  "//": "Type-checks test files. The base tsconfig.json excludes src/**/*.test.ts so they don't ship in the published tarball; this config re-includes them so `tsc -p tsconfig.spec.json --noEmit` catches type errors in tests during CI. We widen rootDir to '.' because tests live outside src/.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*", "e2e/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

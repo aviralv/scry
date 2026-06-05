@@ -2,11 +2,20 @@
 
 Federated search orchestrator over MCP. Query Slack, Confluence, email, and more from a single CLI — get synthesized answers with source attribution.
 
+[![CI](https://github.com/aviralv/scry/actions/workflows/ci.yml/badge.svg)](https://github.com/aviralv/scry/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@aviralv/scry.svg)](https://www.npmjs.com/package/@aviralv/scry)
+
 ## Quick Start
 
 ```bash
-npm install -g scry
-scry init
+npm install -g @aviralv/scry
+scry serve            # opens the web UI; walks a 3-step setup wizard
+```
+
+Or use the CLI directly:
+
+```bash
+scry init             # one-time setup
 scry "what did we decide about pricing?"
 ```
 
@@ -116,3 +125,24 @@ Each MCP server returns different JSON shapes. Scry uses **normalizers** to conv
 - Node.js >= 20
 - At least one MCP server installed and authenticated
 - An Anthropic API key (for synthesis)
+
+## Development
+
+```bash
+git clone https://github.com/aviralv/scry.git
+cd scry
+npm install
+cd web && npm install && cd ..
+
+npm run build               # build server + web
+npm test                    # backend unit tests (vitest)
+cd web && npm test          # web unit tests (vitest + RTL)
+npm run test:e2e            # Playwright E2E (boots the server, isolated XDG dir)
+
+# Optional
+npm run eval:synthesis      # synthesis-quality eval (network; needs ANTHROPIC_API_KEY)
+npm run publish:dry-run     # see what would publish to npm
+```
+
+CI runs unit tests, web tests, and E2E on every push and PR; see
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
