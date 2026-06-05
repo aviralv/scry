@@ -16,26 +16,34 @@
 // either the pre- or post-#20 renderer.
 
 import { test, expect } from '@playwright/test';
+import { seedCompletedConfig } from './_seed.js';
 
 test.describe.configure({ mode: 'serial' });
+
+test.beforeAll(() => seedCompletedConfig());
 
 test('Search submits and renders mock answer + sources', async ({ page }) => {
   await page.goto('/');
 
-  // Submit a query. The mock returns the same content regardless of input.
+  // Wait for the SSE response to start before asserting on rendered text.
+  // Without this, `getByText(/Status:/)` can race the React re-render
+  // triggered by the SSE event arrival on slow CI machines.
+  const responsePromise = page.waitForResponse(
+    (r) => r.url().includes('/api/search') && r.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
+
   const input = page.getByPlaceholder(/Ask anything/);
   await input.fill('what about pricing?');
   await input.press('Enter');
 
-  // Wait for the answer to render. The mock answer contains "Status:".
+  await responsePromise;
+
+  // Mock answer contains "Status:".
   await expect(page.getByText(/Status:/, { exact: false })).toBeVisible({ timeout: 15_000 });
 
   // Citations render as <sup> with data-cite — true for both old and new
   // AnswerStream implementations.
-  const cite1 = page.locator('sup[data-cite="1"]').first();
-  await expect(cite1).toBeVisible();
-
-  const cite2 = page.locator('sup[data-cite="2"]').first();
-  await expect(cite2).toBeVisible();
+  await expect(page.locator('sup[data-cite="1"]').first()).toBeVisible();
+  await expect(page.locator('sup[data-cite="2"]').first()).toBeVisible();
 });
-

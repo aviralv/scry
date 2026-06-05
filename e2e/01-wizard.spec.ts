@@ -1,17 +1,53 @@
 // e2e/01-wizard.spec.ts
 //
-// First-run flow. The Playwright global setup creates a fresh
-// XDG_CONFIG_HOME, so the server boot writes an empty skeleton config and
-// the wizard takes over. We exercise the skip path on both Step 1 (LLM)
-// and Step 2 (MCPs) — that's the realistic E2E path because we have no
-// real Anthropic backend or MCP servers to test against in CI.
+// First-run flow. Resets the seeded config to fresh-install before this
+// file's tests run (spec 01 is the only file that tests the wizard from
+// scratch — the other specs use the seeded "completed" state from
+// globalSetup).
 //
-// After this spec runs, the config is in a "completed but skipped"
-// state which the other specs reuse.
+// We exercise the skip path on both Step 1 (LLM) and Step 2 (MCPs) — that's
+// the realistic E2E path because we have no real Anthropic backend or MCP
+// servers to test against in CI.
 
 import { test, expect } from '@playwright/test';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
 
 test.describe.configure({ mode: 'serial' });
+
+const FRESH_CONFIG = `llm: {}
+mcp_servers: {}
+search_tools: {}
+`;
+
+const SEED_CONFIG = `llm: {}
+mcp_servers: {}
+search_tools: {}
+onboarding:
+  completed: true
+  llm_skipped: true
+  mcps_skipped: true
+`;
+
+function configPath(): string {
+  const xdgHome = process.env.SCRY_E2E_XDG_HOME;
+  if (!xdgHome) {
+    throw new Error('SCRY_E2E_XDG_HOME not set — globalSetup did not run?');
+  }
+  return join(xdgHome, 'scry', 'scry.config.yaml');
+}
+
+test.beforeAll(() => {
+  // Reset to fresh-install. The three tests below progressively walk the
+  // wizard; the file ends in "completed" state, but `afterAll` restores the
+  // seed shape so the next spec file's beforeAll has a clean baseline even
+  // if its own setup misfires.
+  writeFileSync(configPath(), FRESH_CONFIG, 'utf-8');
+});
+
+test.afterAll(() => {
+  writeFileSync(configPath(), SEED_CONFIG, 'utf-8');
+});
 
 test('wizard redirects fresh install to /onboarding', async ({ page }) => {
   await page.goto('/');
@@ -22,7 +58,6 @@ test('wizard redirects fresh install to /onboarding', async ({ page }) => {
 test('Step 1: skip LLM advances to Step 2', async ({ page }) => {
   await page.goto('/onboarding');
 
-  // Confirm dialog → accept.
   page.once('dialog', (d) => d.accept());
 
   await page.getByRole('button', { name: /Skip — searches will fail/ }).click();
@@ -37,13 +72,10 @@ test('Step 2: skip MCPs finishes wizard and lands on Search', async ({ page }) =
 
   await page.getByRole('button', { name: /I'll configure MCPs later/ }).click();
 
-  // Step 3 (Confirm) is auto-derived; finalize.
   await expect(page.getByRole('heading', { name: /Confirm/i })).toBeVisible();
-  // Match the exact button text — "Confirm & finish" matches the rail step
-  // button too; we want the action button.
+  // Match exact button text — "Confirm & finish" matches the rail step too.
   await page.getByRole('button', { name: 'Finalize & start searching' }).click();
 
-  // Lands on Search (home).
   await expect(page).toHaveURL(/^https?:\/\/[^/]+\/?$/, { timeout: 10_000 });
   await expect(page.getByRole('heading')).toBeVisible();
 });

@@ -146,19 +146,21 @@ describe('POST /api/search', () => {
   it('appends a turn when follow-up sends sessionId of an existing row', async () => {
     const app = createServer({ port: 6678, sessionsStore: store });
     // First turn: no sessionId in body. Mock yields done with sessionId='test-session'.
-    await app.request('/api/search', {
+    const r1 = await app.request('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Scry-Csrf': getCsrfToken() },
       body: JSON.stringify({ query: 'turn one' }),
-    }).then((r) => r.text());
+    });
+    await r1.text();
     expect(store.get('test-session')!.turns).toHaveLength(1);
 
     // Follow-up turn: sessionId=test-session in body. Should append, not overwrite.
-    await app.request('/api/search', {
+    const r2 = await app.request('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Scry-Csrf': getCsrfToken() },
       body: JSON.stringify({ query: 'turn two', sessionId: 'test-session' }),
-    }).then((r) => r.text());
+    });
+    await r2.text();
     const row = store.get('test-session')!;
     expect(row.turns).toHaveLength(2);
     expect(row.turns[0].query).toBe('turn one');
@@ -167,11 +169,12 @@ describe('POST /api/search', () => {
 
   it('captures finalAnswer from done event, not concatenated assistant-text', async () => {
     const app = createServer({ port: 6678, sessionsStore: store });
-    await app.request('/api/search', {
+    const res = await app.request('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Scry-Csrf': getCsrfToken() },
       body: JSON.stringify({ query: 'q' }),
-    }).then((r) => r.text());
+    });
+    await res.text();
     const row = store.get('test-session')!;
     // The engine's authoritative finalAnswer in the mock is 'partial\nanswer'.
     // Server-side concat of the two assistant-text deltas would yield 'partial answer'

@@ -16,6 +16,36 @@ const BodySchema = z.object({
   sessionId: z.string().min(1).optional(),
 });
 
+/**
+ * Should the search route use the deterministic mock instead of the real
+ * engine?
+ *
+ * The gate requires BOTH:
+ *   1. SCRY_SEARCH_MOCK=1 explicitly set
+ *   2. NODE_ENV !== 'production' — defense against an accidental .env or
+ *      container environment leaking the var into a real deployment.
+ *
+ * Logged once at boot when active so the operator can see it in stderr.
+ */
+let mockWarningEmitted = false;
+function shouldUseMock(): boolean {
+  const enabled = process.env.SCRY_SEARCH_MOCK === '1';
+  const safe = process.env.NODE_ENV !== 'production';
+  if (enabled && safe && !mockWarningEmitted) {
+    mockWarningEmitted = true;
+    console.warn(
+      'scry: SCRY_SEARCH_MOCK=1 active — search route returns canned results, NOT a real engine call. Unset to use the real engine.',
+    );
+  }
+  if (enabled && !safe && !mockWarningEmitted) {
+    mockWarningEmitted = true;
+    console.warn(
+      'scry: SCRY_SEARCH_MOCK=1 set but NODE_ENV=production — ignoring mock flag (real engine will be used).',
+    );
+  }
+  return enabled && safe;
+}
+
 export function buildSearchRoute(store: SessionsStore): Hono {
   return new Hono().post('/', async (c) => {
     let body: { query: string; fanoutMode?: boolean; sessionId?: string };
@@ -71,9 +101,8 @@ export function buildSearchRoute(store: SessionsStore): Hono {
 
       try {
         // SCRY_SEARCH_MOCK=1 swaps in a deterministic generator for E2E
-        // tests. Never set in production. Same RunQueryEvent shape so the
-        // route, persistence, and client code exercise their real paths.
-        const queryFn = process.env.SCRY_SEARCH_MOCK === '1' ? mockRunQuery : runQuery;
+        // tests. Compound-gated by NODE_ENV — see shouldUseMock() above.
+        const queryFn = shouldUseMock() ? mockRunQuery : runQuery;
         const queryStream = queryFn({
           prompt: body.query,
           config,

@@ -1,12 +1,15 @@
 // e2e/02-mcp-manager.spec.ts
 //
 // MCP manager surface — list bundled servers, add a custom one, drop it.
-// Runs after the wizard has marked onboarding completed (with mcps_skipped),
-// so navigation to /mcps does not redirect.
+// Doesn't depend on spec 01: its beforeAll seeds the "completed" state
+// directly so this file is self-contained.
 
 import { test, expect } from '@playwright/test';
+import { seedCompletedConfig } from './_seed.js';
 
 test.describe.configure({ mode: 'serial' });
+
+test.beforeAll(() => seedCompletedConfig());
 
 test('MCP manager renders bundled servers', async ({ page }) => {
   await page.goto('/mcps');

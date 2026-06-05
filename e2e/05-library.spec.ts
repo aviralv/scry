@@ -7,8 +7,11 @@
 // the sidebar mounts.
 
 import { test, expect } from '@playwright/test';
+import { seedCompletedConfig } from './_seed.js';
 
 test.describe.configure({ mode: 'serial' });
+
+test.beforeAll(() => seedCompletedConfig());
 
 test('Library sidebar mounts on home page', async ({ page }) => {
   await page.goto('/');

@@ -5,8 +5,11 @@
 // + add flow.
 
 import { test, expect } from '@playwright/test';
+import { seedCompletedConfig } from './_seed.js';
 
 test.describe.configure({ mode: 'serial' });
+
+test.beforeAll(() => seedCompletedConfig());
 
 test('Registry page renders', async ({ page }) => {
   await page.goto('/registry');
