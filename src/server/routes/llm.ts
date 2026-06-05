@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
-import { existsSync, readFileSync } from 'fs';
-import { parseDocument } from 'yaml';
+import { existsSync } from 'fs';
 import { LlmConfigSchema } from '../../config/schema.js';
-import { atomicWriteConfig } from '../../config/atomic-write.js';
+import { writeConfigDoc } from '../../config/write-config.js';
 import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js';
 import { isAllowedBaseUrl } from '../ssrf.js';
 import { runLlmTest as realRunLlmTest, type LlmTestInput, type LlmTestResult } from '../llm-test.js';
@@ -74,24 +73,17 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
           await writeDotEnv(deps.envPath(), envKv);
         }
 
-        // Read+modify config directly via yaml Document — writeConfig only handles
-        // mcp_servers + registry, not llm or onboarding blocks.
-        const rawConfig = readFileSync(cfgPath, 'utf-8');
-        const doc = parseDocument(rawConfig);
-        if (doc.errors.length > 0) {
-          return c.json({ error: 'config-malformed', message: doc.errors[0].message }, 500);
-        }
-        doc.set('llm', llmBlock);
+        await writeConfigDoc(cfgPath, (doc) => {
+          doc.set('llm', llmBlock);
 
-        // Clear onboarding.llm_skipped if set.
-        const onboarding = doc.toJSON()?.onboarding;
-        if (onboarding && typeof onboarding === 'object' && (onboarding as { llm_skipped?: boolean }).llm_skipped === true) {
-          const next = { ...(onboarding as Record<string, unknown>) };
-          delete next.llm_skipped;
-          doc.set('onboarding', next);
-        }
-
-        await atomicWriteConfig(cfgPath, String(doc));
+          // Clear onboarding.llm_skipped if set.
+          const onboarding = doc.toJSON()?.onboarding;
+          if (onboarding && typeof onboarding === 'object' && (onboarding as { llm_skipped?: boolean }).llm_skipped === true) {
+            const next = { ...(onboarding as Record<string, unknown>) };
+            delete next.llm_skipped;
+            doc.set('onboarding', next);
+          }
+        });
       } catch (err) {
         // writeDotEnv DotEnvValidationError surfaces as 400 (multi-line value).
         if (err instanceof DotEnvValidationError) {

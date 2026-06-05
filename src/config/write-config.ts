@@ -137,3 +137,45 @@ export async function readConfigDoc(path: string): Promise<Document> {
   const raw = await fs.readFile(path, 'utf-8');
   return parseDocument(raw);
 }
+
+export type WriteConfigDocMutator = (doc: Document) => void | Promise<void>;
+
+/**
+ * Lower-level companion to writeConfig: holds the same file lock, but lets
+ * the caller mutate the YAML Document directly. Use this when writing fields
+ * that fall outside writeConfig's WriteConfigUpdates shape (llm, onboarding).
+ *
+ * Validation is the caller's responsibility. The mutator runs INSIDE the lock,
+ * after a fresh read — so concurrent callers each see a consistent snapshot
+ * and the last writer doesn't silently overwrite an earlier one.
+ */
+export async function writeConfigDoc(path: string, mutator: WriteConfigDocMutator): Promise<void> {
+  // Existence pre-check — proper-lockfile fails on missing target with a less-clear error.
+  try {
+    await fs.access(path);
+  } catch {
+    throw new ConfigMissingError(path);
+  }
+
+  const release = await lockfile.lock(path, {
+    stale: 10_000,
+    retries: { retries: 5, minTimeout: 50 },
+    onCompromised: (err: Error) => {
+      console.error(`[writeConfigDoc] lock compromised on ${path}: ${err.message}`);
+    },
+  });
+  try {
+    const raw = await fs.readFile(path, 'utf-8');
+    const doc = parseDocument(raw);
+    if (doc.errors.length > 0) {
+      throw new Error(`Config at ${path} contains YAML syntax errors: ${doc.errors[0].message}`);
+    }
+
+    await mutator(doc);
+
+    const out = String(doc);
+    await atomicWriteConfig(path, out);
+  } finally {
+    await release();
+  }
+}

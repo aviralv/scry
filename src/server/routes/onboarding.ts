@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'fs';
 import { parseDocument } from 'yaml';
 import { McpServerConfigSchema } from '../../config/schema.js';
 import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js';
-import { atomicWriteConfig } from '../../config/atomic-write.js';
+import { writeConfigDoc, ConfigNameExistsError } from '../../config/write-config.js';
 import { healthCheck as realHealthCheck, type HealthCheckResult } from '../mcp-health.js';
 import type { McpServerConfig } from '../../config/types.js';
 import { zodToApiErrors } from '../../shared/api-errors.js';
@@ -122,10 +122,10 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
       const cfgPath = deps.configPath();
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
-      const doc = readDoc(cfgPath);
-      const ob = (doc.toJSON()?.onboarding ?? {}) as Record<string, unknown>;
-      doc.set('onboarding', { ...ob, completed: true });
-      await atomicWriteConfig(cfgPath, String(doc));
+      await writeConfigDoc(cfgPath, (doc) => {
+        const ob = (doc.toJSON()?.onboarding ?? {}) as Record<string, unknown>;
+        doc.set('onboarding', { ...ob, completed: true });
+      });
 
       return c.json({ completed: true });
     })
@@ -146,12 +146,13 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
         return c.json({ error: 'invalid-body', errors: zodToApiErrors(parsed.error.issues) }, 400);
       }
 
-      const doc = readDoc(cfgPath);
-      const ob = (doc.toJSON()?.onboarding ?? { completed: false }) as Record<string, unknown>;
       const flag = parsed.data.step === 'llm' ? 'llm_skipped' : 'mcps_skipped';
-      const next = { ...ob, [flag]: true };
-      doc.set('onboarding', next);
-      await atomicWriteConfig(cfgPath, String(doc));
+      let next: Record<string, unknown> = {};
+      await writeConfigDoc(cfgPath, (doc) => {
+        const ob = (doc.toJSON()?.onboarding ?? { completed: false }) as Record<string, unknown>;
+        next = { ...ob, [flag]: true };
+        doc.set('onboarding', next);
+      });
 
       return c.json({ onboarding: next });
     })
@@ -220,36 +221,37 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
           await writeDotEnv(deps.envPath(), parsed.data.envValues);
         }
 
-        // Re-read doc after env write to get the freshest state.
-        const doc2 = readDoc(cfgPath);
-        const json2 = doc2.toJSON() ?? {};
+        await writeConfigDoc(cfgPath, (doc) => {
+          const json2 = doc.toJSON() ?? {};
 
-        // Authoritative duplicate check (in case a concurrent caller beat us).
-        const existing2: Record<string, McpServerConfig> = json2.mcp_servers ?? {};
-        if (existing2[parsed.data.name]) {
+          // Authoritative duplicate check inside the lock — race-safe.
+          const existing2: Record<string, McpServerConfig> = json2.mcp_servers ?? {};
+          if (existing2[parsed.data.name]) {
+            throw new ConfigNameExistsError(parsed.data.name);
+          }
+
+          const mcps2 = { ...existing2, [parsed.data.name]: newServer };
+          doc.set('mcp_servers', mcps2);
+
+          // Clear mcps_skipped if set, preserving other onboarding fields.
+          const ob = doc.toJSON()?.onboarding;
+          if (
+            ob &&
+            typeof ob === 'object' &&
+            (ob as { mcps_skipped?: boolean }).mcps_skipped === true
+          ) {
+            const next = { ...(ob as Record<string, unknown>) };
+            delete next.mcps_skipped;
+            doc.set('onboarding', next);
+          }
+        });
+      } catch (err) {
+        if (err instanceof ConfigNameExistsError) {
           return c.json(
-            { error: 'name-exists', message: `MCP "${parsed.data.name}" already exists` },
+            { error: 'name-exists', message: `MCP "${err.name}" already exists` },
             409,
           );
         }
-
-        const mcps2 = { ...existing2, [parsed.data.name]: newServer };
-        doc2.set('mcp_servers', mcps2);
-
-        // Clear mcps_skipped if set, preserving other onboarding fields.
-        const ob = doc2.toJSON()?.onboarding;
-        if (
-          ob &&
-          typeof ob === 'object' &&
-          (ob as { mcps_skipped?: boolean }).mcps_skipped === true
-        ) {
-          const next = { ...(ob as Record<string, unknown>) };
-          delete next.mcps_skipped;
-          doc2.set('onboarding', next);
-        }
-
-        await atomicWriteConfig(cfgPath, String(doc2));
-      } catch (err) {
         if (err instanceof DotEnvValidationError) {
           return c.json({ error: 'invalid-body', message: err.message }, 400);
         }

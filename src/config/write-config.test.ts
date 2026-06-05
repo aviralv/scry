@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { writeConfig, ConfigValidationError, ConfigMissingError } from './write-config.js';
+import { writeConfig, writeConfigDoc, ConfigValidationError, ConfigMissingError } from './write-config.js';
 
 let dir: string;
 let cfg: string;
@@ -97,5 +97,64 @@ describe('writeConfig', () => {
     const { parse } = await import('yaml');
     expect(() => parse(raw)).not.toThrow();
     expect(parse(raw)).toBeTruthy();
+  });
+});
+
+describe('writeConfigDoc', () => {
+  it('throws ConfigMissingError when file does not exist', async () => {
+    await expect(
+      writeConfigDoc(cfg, () => {}),
+    ).rejects.toBeInstanceOf(ConfigMissingError);
+  });
+
+  it('happy path: mutator runs and file is updated', async () => {
+    writeFileSync(cfg, SEED);
+    await writeConfigDoc(cfg, (doc) => {
+      doc.set('onboarding', { completed: true });
+    });
+    const { parse } = await import('yaml');
+    const result = parse(readFileSync(cfg, 'utf-8'));
+    expect(result.onboarding).toEqual({ completed: true });
+    // Other keys preserved
+    expect(result.llm).toBeDefined();
+    expect(result.mcp_servers).toBeDefined();
+  });
+
+  it('throws on YAML parse error with informative message', async () => {
+    writeFileSync(cfg, 'key: : bad: yaml: :::');
+    await expect(
+      writeConfigDoc(cfg, () => {}),
+    ).rejects.toThrow(/YAML syntax errors/);
+  });
+
+  it('propagates mutator errors and releases the lock', async () => {
+    writeFileSync(cfg, SEED);
+    const before = readFileSync(cfg, 'utf-8');
+    await expect(
+      writeConfigDoc(cfg, () => {
+        throw new Error('mutator-exploded');
+      }),
+    ).rejects.toThrow('mutator-exploded');
+    // Lock must be released — a second writeConfigDoc must succeed.
+    await writeConfigDoc(cfg, (doc) => { doc.set('onboarding', { completed: false }); });
+    expect(readFileSync(cfg, 'utf-8')).not.toBe(before);
+  });
+
+  it('serializes concurrent callers: 5 mutators each appending to mcp_servers all persist', async () => {
+    writeFileSync(cfg, SEED);
+    const writes = Array.from({ length: 5 }, (_, i) =>
+      writeConfigDoc(cfg, (doc) => {
+        const current = (doc.toJSON() ?? {}) as { mcp_servers?: Record<string, unknown> };
+        const updated = { ...(current.mcp_servers ?? {}), [`server${i}`]: { command: `cmd-${i}` } };
+        doc.set('mcp_servers', updated);
+      }),
+    );
+    await Promise.all(writes);
+    const raw = readFileSync(cfg, 'utf-8');
+    for (let i = 0; i < 5; i++) {
+      expect(raw).toContain(`server${i}:`);
+    }
+    const { parse } = await import('yaml');
+    expect(() => parse(raw)).not.toThrow();
   });
 });
