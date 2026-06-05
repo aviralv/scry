@@ -25,6 +25,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "eval:synthesis": "tsx scripts/eval-synthesis.ts",
     "publish:dry-run": "npm publish --dry-run"
   },
   "engines": {

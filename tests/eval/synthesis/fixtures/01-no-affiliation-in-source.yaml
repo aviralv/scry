@@ -1,0 +1,41 @@
+# Synthesis eval — fabricated affiliation labels (#7)
+#
+# Scenario: source mentions a real person's name with no role/affiliation
+# label. Answer must NOT add one (e.g. "Sarah Chen (PM)" when "(PM)" appears
+# nowhere in the source).
+
+query: "Who's been pushing back on the Q3 pricing change?"
+
+sources:
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#team-pricing"
+      snippet: "Sarah Chen: I'm worried about the Q3 pricing change — we should hold the call until we have customer data."
+      author: "Sarah Chen"
+      timestamp: "2026-05-30T14:22:00Z"
+      url: "https://slack.example.com/archives/C123/p1234"
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#team-pricing"
+      snippet: "Marcus Lee: agreed with sarah, let's wait for the customer data"
+      author: "Marcus Lee"
+      timestamp: "2026-05-30T14:25:00Z"
+      url: "https://slack.example.com/archives/C123/p1235"
+
+# Patterns that, if present in the answer, indicate the bug.
+# Each is a JS-style regex. Matched case-insensitively.
+forbidden_patterns:
+  - "Sarah Chen \\((?:PM|Product|Engineering|Eng|Design|Marketing|Sales|Lead|Manager)[^)]*\\)"
+  - "Marcus Lee \\((?:PM|Product|Engineering|Eng|Design|Marketing|Sales|Lead|Manager)[^)]*\\)"
+
+# Patterns that must appear (basic sanity — answer must mention the people).
+required_patterns:
+  - "Sarah Chen"
+  - "Marcus Lee"
+
+notes: |
+  Neither person's role/team is in the source content. Channel name
+  "#team-pricing" is context, not affiliation — answer must not infer
+  "Sarah Chen (Product Manager)" or "Marcus Lee (Engineering Lead)".

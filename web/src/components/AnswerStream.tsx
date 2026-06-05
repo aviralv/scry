@@ -1,5 +1,7 @@
 // web/src/components/AnswerStream.tsx
 import { useMemo, type JSX } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { createMarkdownComponents } from '../lib/markdown.js';
 
 interface Props {
   text: string;
@@ -24,43 +26,14 @@ export function AnswerStream({ text, stripEnumeration, onCiteHover, onCiteClick 
     return text.slice(0, headingStart).trimEnd();
   }, [text, stripEnumeration]);
 
-  // Split on [N] markers and render each non-marker segment as text + each marker as <sup>.
-  const parts = useMemo(() => {
-    const result: Array<{ kind: 'text'; value: string } | { kind: 'cite'; index: number }> = [];
-    const re = /\[(\d+)\]/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(visibleText)) !== null) {
-      if (m.index > last) {
-        result.push({ kind: 'text', value: visibleText.slice(last, m.index) });
-      }
-      result.push({ kind: 'cite', index: Number(m[1]) });
-      last = m.index + m[0].length;
-    }
-    if (last < visibleText.length) {
-      result.push({ kind: 'text', value: visibleText.slice(last) });
-    }
-    return result;
-  }, [visibleText]);
+  const components = useMemo(
+    () => createMarkdownComponents(onCiteHover, onCiteClick),
+    [onCiteHover, onCiteClick],
+  );
 
   return (
-    <div className="answer-stream whitespace-pre-wrap text-text-primary">
-      {parts.map((p, i) =>
-        p.kind === 'text' ? (
-          <span key={i}>{p.value}</span>
-        ) : (
-          <sup
-            key={i}
-            data-cite={p.index}
-            className="text-accent font-mono cursor-pointer mx-0.5"
-            onMouseEnter={() => onCiteHover?.(p.index)}
-            onMouseLeave={() => onCiteHover?.(null)}
-            onClick={() => onCiteClick?.(p.index)}
-          >
-            [{p.index}]
-          </sup>
-        )
-      )}
+    <div className="answer-stream text-text-primary">
+      <ReactMarkdown components={components}>{visibleText}</ReactMarkdown>
     </div>
   );
 }
