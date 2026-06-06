@@ -61,7 +61,10 @@ function readEnvKeys(envPath: string): string[] {
 const WELL_KNOWN_ENV_REFS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
-  'SLACK_TOKEN',
+  // SLACK_TOKEN intentionally absent: slack-mcp uses the Slack desktop
+  // app's saved session, not an API token. Was removed from
+  // bundled-servers.ts during Plan G smoke; keeping it here would still
+  // light up the "Detected from environment" badge spuriously.
   'MS365_CLIENT_ID',
   'ATLASSIAN_URL',
   'ATLASSIAN_EMAIL',

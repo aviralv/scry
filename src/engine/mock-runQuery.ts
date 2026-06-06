@@ -44,7 +44,7 @@ The RFC has been merged [2].`;
 
 export async function* mockRunQuery(opts: RunQueryOptions): AsyncIterable<RunQueryEvent> {
   void opts;
-  const sessionId = 'mock-session-' + (process.env.SCRY_MOCK_SESSION_SUFFIX ?? 'fixed');
+  const sessionId = 'mock-session-fixed';
   const cards = makeCards();
 
   yield { type: 'session-init', sessionId };
