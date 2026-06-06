@@ -99,10 +99,6 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
           if (block.type === 'text' && typeof block.text === 'string') {
             finalAnswer = (finalAnswer ? finalAnswer + '\n' : '') + block.text;
             yield { type: 'assistant-text', text: block.text };
-            for (const cit of tracker.validateMarkers(block.text)) {
-              const card = tracker.sources.find((s) => s.index === cit.index)!;
-              yield { type: 'citation', index: cit.index, source: card };
-            }
           } else if (block.type === 'tool_use' && typeof block.id === 'string') {
             const toolName = (block.name as string) ?? 'unknown';
             const server = serverForTool(toolName, opts.config.search_tools);
@@ -228,6 +224,5 @@ function parseToolResult(
     url: payload.url,
     author: payload.author,
     timestamp: payload.timestamp,
-    raw,
   });
 }

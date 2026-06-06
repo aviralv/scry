@@ -121,6 +121,5 @@ function makeCard(index: number, source: string, title: string, url: string | un
     title,
     snippet: '',
     url,
-    raw: null,
   };
 }

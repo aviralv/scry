@@ -200,8 +200,6 @@ export function Search({ activeSessionId, onSessionStarted, onSessionDone }: Pro
               return { kind: 'done', turns, sessionId: event.sessionId };
             case 'error':
               return { kind: 'error', turns: prev.turns, sessionId: prev.sessionId, message: event.message };
-            case 'citation':
-              return prev;
           }
         });
       },

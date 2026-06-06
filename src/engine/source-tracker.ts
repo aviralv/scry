@@ -1,4 +1,4 @@
-import type { Citation, SourceCard } from './types.js';
+import type { SourceCard } from './types.js';
 
 interface ToolResultPayload {
   title: string;
@@ -6,9 +6,20 @@ interface ToolResultPayload {
   url?: string;
   author?: string;
   timestamp?: string;
-  raw?: unknown;
 }
 
+/**
+ * Accumulates SourceCards in the order they arrive from MCP tool_result blocks.
+ * The 1-based `index` is what the model uses for `[N]` citations in its
+ * synthesis. The tracker is also seeded with `priorSources` from prior turns
+ * so a follow-up answer's citations resolve against the full session history.
+ *
+ * NOTE: this used to also expose `validateMarkers(text)` to drive a streaming
+ * `citation` event during synthesis. The event was dead protocol traffic
+ * (CLI ignored it; web's reducer did `return prev`); removed in PR C cleanup.
+ * If progressive citation highlighting comes back, restore that helper from
+ * git history rather than reimplementing.
+ */
 export class SourceTracker {
   private list: SourceCard[];
 
@@ -30,32 +41,8 @@ export class SourceTracker {
       url: payload.url,
       author: payload.author,
       timestamp: payload.timestamp,
-      raw: payload.raw ?? null,
     };
     this.list.push(card);
     return card;
-  }
-
-  validateMarkers(text: string): Citation[] {
-    const seen = new Set<number>();
-    const cites: Citation[] = [];
-    const re = /\[(\d+)\]/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text)) !== null) {
-      const idx = Number(m[1]);
-      if (seen.has(idx)) continue;
-      const card = this.list.find((s) => s.index === idx);
-      if (!card) continue;
-      seen.add(idx);
-      cites.push({
-        index: idx,
-        source: card.source,
-        title: card.title,
-        url: card.url,
-        author: card.author,
-        timestamp: card.timestamp,
-      });
-    }
-    return cites;
   }
 }

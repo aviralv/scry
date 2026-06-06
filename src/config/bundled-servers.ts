@@ -7,7 +7,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
     command: 'slack-mcp',
     githubUrl: 'https://github.com/aviralv/slack-mcp',
     description: 'Slack search, channel history, DMs',
-    searchTools: [{ tool: 'slack_search', params: { format: 'json' }, normalizer: 'slack' }],
+    searchTools: [{ tool: 'slack_search', params: { format: 'json' } }],
     // No envVars: slack-mcp uses your Slack desktop app's saved session, not an API token.
   },
   {
@@ -16,7 +16,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
     command: 'ms365-intent-mcp',
     githubUrl: 'https://github.com/aviralv/ms365-intent-mcp',
     description: 'Outlook email, calendar, Teams, OneDrive',
-    searchTools: [{ tool: 'outlook_list_messages', params: { format: 'json' }, normalizer: 'email' }],
+    searchTools: [{ tool: 'outlook_list_messages', params: { format: 'json' } }],
     envVars: ['MS365_CLIENT_ID'],
   },
   {
@@ -25,7 +25,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
     command: 'confluence-jira-mcp',
     githubUrl: 'https://github.com/aviralv/confluence-jira-mcp',
     description: 'Confluence pages, Jira issues',
-    searchTools: [{ tool: 'confluence_search', params: { format: 'json' }, normalizer: 'confluence' }],
+    searchTools: [{ tool: 'confluence_search', params: { format: 'json' } }],
     envVars: ['ATLASSIAN_URL', 'ATLASSIAN_EMAIL', 'ATLASSIAN_API_TOKEN'],
   },
 ];

@@ -72,8 +72,6 @@ function printEvent(event: RunQueryEvent): void {
     case 'assistant-text':
       process.stdout.write(event.text + '\n');
       break;
-    case 'citation':
-      break;
     case 'sources-finalized':
       // GUI-only event; CLI relies on Claude's prose Sources block in 'assistant-text'.
       break;

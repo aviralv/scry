@@ -19,32 +19,19 @@ describe('SourceTracker', () => {
 
   it('continues numbering across follow-up turns when priors passed', () => {
     const prior: SourceCard[] = [
-      { index: 1, source: 'slack', tool: 'slack_search', title: 'A', snippet: 'a', raw: {} },
-      { index: 2, source: 'confluence-jira', tool: 'confluence_search', title: 'B', snippet: 'b', raw: {} },
+      { index: 1, source: 'slack', tool: 'slack_search', title: 'A', snippet: 'a' },
+      { index: 2, source: 'confluence-jira', tool: 'confluence_search', title: 'B', snippet: 'b' },
     ];
     const t = new SourceTracker(prior);
     t.recordToolResult('slack', 'slack_search', { title: 'C', snippet: 'c' });
     expect(t.sources.map((s) => s.index)).toEqual([1, 2, 3]);
   });
 
-  it('validateMarkers returns citations for known indices', () => {
+  it('returns a defensive copy from `sources` getter', () => {
     const t = new SourceTracker([]);
     t.recordToolResult('slack', 'slack_search', { title: 'A', snippet: 'a' });
-    t.recordToolResult('slack', 'slack_search', { title: 'B', snippet: 'b' });
-    const cits = t.validateMarkers('Andre said X [1] but Dimitri disagreed [2]');
-    expect(cits.map((c) => c.index)).toEqual([1, 2]);
-  });
-
-  it('drops unmapped indices', () => {
-    const t = new SourceTracker([]);
-    t.recordToolResult('slack', 'slack_search', { title: 'A', snippet: 'a' });
-    expect(t.validateMarkers('claim [99]')).toEqual([]);
-  });
-
-  it('deduplicates repeated indices in one text', () => {
-    const t = new SourceTracker([]);
-    t.recordToolResult('slack', 'slack_search', { title: 'A', snippet: 'a' });
-    const cits = t.validateMarkers('says [1] and again [1]');
-    expect(cits.length).toBe(1);
+    const view = t.sources;
+    view.push({ index: 99, source: 'evil', tool: 'evil', title: 'X', snippet: '' });
+    expect(t.sources).toHaveLength(1);
   });
 });
