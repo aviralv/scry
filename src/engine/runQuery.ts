@@ -49,13 +49,16 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   const toolUseMap = new Map<string, { tool: string; server: string }>();
   const tracker = new SourceTracker(opts.priorSources ?? []);
 
-  // 5. Build allowedTools — restrict Claude to ONLY the configured search
-  // tools. This blocks Claude Code's built-ins (Task, Bash, Read, Edit, etc.)
-  // so the agent can't spawn subagents or touch the filesystem; it can only
-  // call the MCP tools the user has explicitly listed in scry.config.yaml.
-  const allowedTools = Object.entries(opts.config.search_tools).flatMap(
-    ([server, tools]) => tools.map((t) => `mcp__${server}__${t.tool}`),
-  );
+  // 5. Disable all built-in Claude Code tools (Task, Bash, Read, Edit, Write,
+  // Grep, etc.) by passing `tools: []`. This is the SDK's documented way to
+  // restrict the base toolset — `allowedTools` is auto-allow, NOT a restrictor
+  // (per the SDK's own d.ts: "To restrict which tools are available, use the
+  // `tools` option instead"). Dropping `allowedTools` eliminates ~3 spurious
+  // `Task`/`Agent` calls per query that the model used to attempt before
+  // falling back to MCP search tools (issue #5).
+  //
+  // MCP tools remain available because they come through `mcpServers`, not
+  // through the base toolset that `tools` controls.
 
   // 6. Call SDK (or injected fake).
   const queryFn = opts.queryFn ?? realQuery;
@@ -69,11 +72,11 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
       abortController,
       // Headless: no UI to approve permission prompts. The user has
       // already authorized these MCPs by configuring them in scry.config.yaml.
-      // Combined with the allowedTools restriction above, the bypass is
-      // bounded to exactly the configured search tools.
+      // Combined with `tools: []`, the bypass is bounded to exactly the MCP
+      // tools wired in via `mcpServers`.
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      allowedTools,
+      tools: [],
     } as never, // SDK option type is wide; conservative cast
   });
 

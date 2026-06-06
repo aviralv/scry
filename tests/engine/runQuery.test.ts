@@ -315,4 +315,32 @@ describe('runQuery', () => {
     expect(capturedMcpServers!).toHaveProperty('explicit_keep');
     expect(capturedMcpServers!).not.toHaveProperty('drop');
   });
+
+  it('passes tools: [] to disable all built-in Claude Code tools', async () => {
+    // Issue #5: switch from `allowedTools` (auto-allow, doesn't restrict) to
+    // `tools: []` (the actual restrictor). MCP tools still flow through
+    // `mcpServers`, so this disables only the base toolset (Task, Bash, etc.).
+    let capturedOptions: Record<string, unknown> | null = null;
+    const fakeQuery = ((args: { prompt: string; options: Record<string, unknown> }) => {
+      capturedOptions = args.options;
+      return (async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 'sess-tools' };
+        yield { type: 'result', subtype: 'success', session_id: 'sess-tools' };
+      })();
+    }) as never;
+
+    await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        queryFn: fakeQuery,
+      }),
+    );
+
+    expect(capturedOptions).not.toBeNull();
+    expect(capturedOptions!.tools).toEqual([]);
+    // The legacy `allowedTools` should NOT be set — `tools: []` supersedes it.
+    expect(capturedOptions!.allowedTools).toBeUndefined();
+  });
 });
