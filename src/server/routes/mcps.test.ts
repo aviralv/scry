@@ -23,7 +23,7 @@ beforeEach(() => {
   writeFileSync(cfg, SEED);
   healthCheckMock = vi.fn().mockResolvedValue({ ok: true, toolCount: 1 });
   app = new Hono();
-  app.route('/api/mcps', buildMcpsRoute({ configPath: () => cfg, healthCheck: healthCheckMock }));
+  app.route('/api/mcps', buildMcpsRoute({ configPath: cfg, healthCheck: healthCheckMock }));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

@@ -3,22 +3,22 @@
 // Two functions for writing scry.config.yaml. Pick by which block you're
 // touching:
 //
-//   | Block(s)                | Use              | Why                       |
-//   | ----------------------- | ---------------- | ------------------------- |
-//   | mcp_servers, registry   | writeConfig      | Schema-validated, full    |
-//   |                         |                  | replace, race-safe merge  |
-//   | llm, onboarding, future | writeConfigDoc   | Raw YAML mutation;        |
-//   |                         |                  | caller validates          |
+//   | Block(s)                | Use              | Why                            |
+//   | ----------------------- | ---------------- | ------------------------------ |
+//   | mcp_servers, registry   | writeConfig      | Schema-validated, full replace |
+//   | llm, onboarding, future | writeConfigDoc   | Raw YAML mutation; caller      |
+//   |                         |                  | validates                       |
 //
 // Both hold a proper-lockfile lock around read + mutate + atomic write so
 // two concurrent callers don't lose each other's writes.
 //
-// `writeConfig(path, mergeFn)` — the safe path. Reads, runs `mergeFn` with
-// the parsed snapshot inside the lock, validates the resulting block via
-// the Zod schemas, atomic-writes. Use for any block that has a schema in
-// `schema.ts`.
+// `writeConfig(path, mergeFn)` — schema-validated path. Reads, runs `mergeFn`
+// with the parsed snapshot inside the lock, validates the result via the
+// Zod schemas, atomic-writes. The two managed blocks (`mcp_servers`,
+// `registry`) are *replaced wholesale* — not deep-merged — to avoid
+// silently dropping deletions.
 //
-// `writeConfigDoc(path, mutator)` — the escape hatch. Reads as a yaml
+// `writeConfigDoc(path, mutator)` — escape hatch. Reads as a yaml
 // `Document` (preserves comments/formatting), runs `mutator` inside the
 // lock, atomic-writes. Validation is the caller's responsibility.
 

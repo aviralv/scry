@@ -45,8 +45,8 @@ beforeEach(() => {
   healthCheckMock = vi.fn().mockResolvedValue({ ok: true, toolCount: 1 });
   app = new Hono();
   app.route('/api/onboarding', buildOnboardingRoute({
-    configPath: () => cfg,
-    envPath: () => envPath,
+    configPath: cfg,
+    envPath: envPath,
     healthCheck: healthCheckMock,
   }));
 });

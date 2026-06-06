@@ -37,14 +37,14 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   });
   const mcpServers = buildMcpServers(opts.config.mcp_servers);
 
-  // 2. Set up abort.
+  // Set up abort.
   const abortController = new AbortController();
   if (opts.signal) {
     if (opts.signal.aborted) abortController.abort();
     else opts.signal.addEventListener('abort', () => abortController.abort(), { once: true });
   }
 
-  // 3. tool_use_id → { tool, server } correlation. tool_result blocks reference
+  // tool_use_id → { tool, server } correlation. tool_result blocks reference
   // tool_use_id from a prior assistant message; we look up here to attribute
   // the source card correctly.
   const toolUseMap = new Map<string, { tool: string; server: string }>();
@@ -57,7 +57,7 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   // citation feature lands.
   const tracker = new SourceTracker([]);
 
-  // 4. Disable all built-in Claude Code tools (Task, Bash, Read, Edit, Write,
+  // Disable all built-in Claude Code tools (Task, Bash, Read, Edit, Write,
   // Grep, etc.) by passing `tools: []`. This is the SDK's documented way to
   // restrict the base toolset — `allowedTools` is auto-allow, NOT a restrictor
   // (per the SDK's own d.ts: "To restrict which tools are available, use the
@@ -68,7 +68,7 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   // MCP tools remain available because they come through `mcpServers`, not
   // through the base toolset that `tools` controls.
 
-  // 5. Call SDK (or injected fake).
+  // Call SDK (or injected fake).
   const queryFn = opts.queryFn ?? realQuery;
   const stream = queryFn({
     prompt: opts.prompt,

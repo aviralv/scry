@@ -18,7 +18,7 @@ beforeEach(() => {
   writeFileSync(cfg, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n');
   app = new Hono();
   app.use('*', csrfRequired());
-  app.route('/api/registry', buildRegistryRoute({ configPath: () => cfg }));
+  app.route('/api/registry', buildRegistryRoute({ configPath: cfg }));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

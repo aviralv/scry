@@ -21,7 +21,7 @@ const PatchBodySchema = McpServerConfigSchema.partial().refine(
 );
 
 interface RouteDeps {
-  configPath: () => string;
+  configPath: string;
   healthCheck?: (server: McpServerConfig, opts?: { timeoutMs?: number }) => Promise<HealthCheckResult>;
 }
 
@@ -61,7 +61,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
 
   return new Hono()
     .get('/', (c) => {
-      const r = loadServers(deps.configPath());
+      const r = loadServers(deps.configPath);
       if (r.kind === 'missing') return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
       if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
       const entries = Object.entries(r.servers).map(([n, s]) => toMcpEntry(n, s));
@@ -69,7 +69,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
     })
 
     .post('/', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       // Fast-path checks outside the lock: existence (412) and malformed (500).
       const r = loadServers(cfgPath);
       if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
@@ -112,7 +112,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
     })
 
     .patch('/:name', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       const r = loadServers(cfgPath);
       if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
       if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
@@ -158,7 +158,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
     })
 
     .delete('/:name', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       const r = loadServers(cfgPath);
       if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
       if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
@@ -179,7 +179,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
     })
 
     .post('/:name/test', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       const r = loadServers(cfgPath);
       if (r.kind === 'missing') return c.json({ error: 'config-required' }, 412);
       if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
