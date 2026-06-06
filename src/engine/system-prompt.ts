@@ -28,7 +28,7 @@ function buildOutputRules(serverNames: string[]): string {
   cite it under the tool that returned it.`;
 }
 
-const FANOUT_DIRECTIVE = `Search-mode override: the user has activated fanout mode. Call ALL configured search tools in your first turn before producing any prose, then synthesize across the combined results.`;
+export const FANOUT_DIRECTIVE = `Search-mode override: the user has activated fanout mode. Call ALL configured search tools in your first turn before producing any prose, then synthesize across the combined results.`;
 
 export function buildSystemPrompt(opts: BuildSystemPromptOptions): string {
   const sections: string[] = [IDENTITY];

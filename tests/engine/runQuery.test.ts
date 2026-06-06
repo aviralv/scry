@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runQuery } from '../../src/engine/runQuery.js';
+import { FANOUT_DIRECTIVE } from '../../src/engine/system-prompt.js';
 import type { ScryConfig } from '../../src/config/types.js';
 import type { RunQueryEvent } from '../../src/engine/types.js';
 
@@ -422,10 +423,10 @@ describe('runQuery', () => {
     );
 
     expect(capturedSystemPrompt).not.toBeNull();
-    // The fanout directive is asserted in system-prompt.test.ts; here we
-    // only need to confirm the flag reached buildSystemPrompt and the
-    // directive landed in the prompt the SDK sees.
-    expect(capturedSystemPrompt!).toMatch(/fanout|all.*configured.*tools/i);
+    // Pin to the exact exported directive constant rather than a keyword
+    // regex — a stray "fanout" comment elsewhere in the prompt would
+    // false-positive a loose match.
+    expect(capturedSystemPrompt!).toContain(FANOUT_DIRECTIVE);
   });
 
   it('does NOT inject the fanout directive by default', async () => {
@@ -448,6 +449,9 @@ describe('runQuery', () => {
     );
 
     expect(capturedSystemPrompt).not.toBeNull();
-    expect(capturedSystemPrompt!).not.toMatch(/fanout mode/i);
+    // Same constant as the positive test so the negative test's coverage
+    // matches — not a narrower keyword that could let a partial directive
+    // sneak through.
+    expect(capturedSystemPrompt!).not.toContain(FANOUT_DIRECTIVE);
   });
 });

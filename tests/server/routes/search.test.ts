@@ -8,9 +8,16 @@ import { SessionsStore } from '../../../src/storage/sessions.js';
 
 // Mock runQuery so test 4 doesn't spawn real MCP child processes.
 // The real config exists at ~/.config/scry/scry.config.yaml on this machine.
+//
+// `lastRunQueryOpts` is updated on every call so route-level tests can
+// assert what got forwarded (e.g. fanoutMode propagation through the body
+// schema → route handler → engine).
+export const lastRunQueryOpts: { value: Record<string, unknown> | null } = { value: null };
+
 vi.mock('../../../src/engine/runQuery.js', () => ({
-  runQuery: () =>
-    (async function* () {
+  runQuery: (opts: Record<string, unknown>) => {
+    lastRunQueryOpts.value = opts;
+    return (async function* () {
       yield { type: 'session-init', sessionId: 'test-session' };
       yield { type: 'assistant-text', text: 'partial ' };
       yield { type: 'assistant-text', text: 'answer' };
@@ -20,7 +27,8 @@ vi.mock('../../../src/engine/runQuery.js', () => ({
         sources: [],
         finalAnswer: 'partial\nanswer',
       };
-    })(),
+    })();
+  },
 }));
 
 let dir: string;
@@ -119,10 +127,12 @@ describe('POST /api/search', () => {
     expect(body.error).toBe('invalid-body');
   });
 
-  it('accepts fanoutMode: true in body without 400', async () => {
-    // The frontend's "fanout mode" checkbox sends fanoutMode: true. The
-    // schema must accept it, the route must forward it through. End-to-end
-    // assertion that the flag isn't silently dropped by the body parser.
+  it('forwards fanoutMode: true to runQuery (not silently dropped by body parser)', async () => {
+    // The frontend's "fanout mode" checkbox sends fanoutMode: true.
+    // Verify the chain end-to-end: schema accepts → route forwards →
+    // runQuery sees the flag. lastRunQueryOpts.value is set by the mock
+    // at the top of this file.
+    lastRunQueryOpts.value = null;
     const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
       method: 'POST',
@@ -133,7 +143,27 @@ describe('POST /api/search', () => {
       body: JSON.stringify({ query: 'x', fanoutMode: true }),
     });
     expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toMatch(/text\/event-stream/);
+    await res.text();
+    expect(lastRunQueryOpts.value).not.toBeNull();
+    expect(lastRunQueryOpts.value!.fanoutMode).toBe(true);
+  });
+
+  it('defaults fanoutMode to falsy when omitted from body', async () => {
+    lastRunQueryOpts.value = null;
+    const app = createServer({ port: 6678, sessionsStore: store });
+    const res = await app.request('/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Scry-Csrf': getCsrfToken(),
+      },
+      body: JSON.stringify({ query: 'x' }),
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+    expect(lastRunQueryOpts.value).not.toBeNull();
+    // The route uses Boolean(body.fanoutMode), so undefined → false.
+    expect(lastRunQueryOpts.value!.fanoutMode).toBe(false);
   });
 
   it('rejects fanoutMode of wrong type', async () => {

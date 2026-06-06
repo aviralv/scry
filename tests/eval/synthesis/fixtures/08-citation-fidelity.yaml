@@ -28,12 +28,11 @@ sources:
       url: "https://slack.example.com/archives/C500/p5000"
 
 forbidden_patterns:
-  # The synthetic prompt provides 2 sources. Any inline citation [3], [4],
-  # [5], ... is a fabricated reference. JS regex with negative-set-style
-  # matching: any digit 3-9 inside [N] brackets is forbidden.
-  - "\\[[3-9]\\]"
-  # Two-digit indices are also fabrications (max provided = 2).
-  - "\\[[1-9][0-9]+\\]"
+  # The synthetic prompt provides 2 sources. Any inline citation outside
+  # [1] or [2] is a fabricated reference. This single pattern matches
+  # 0, 3-9, and any multi-digit number — covering all integers a
+  # hallucinating model could emit.
+  - "\\[(?:0|[3-9]|[1-9][0-9]+)\\]"
 
 required_patterns:
   # The model must cite at least once — otherwise it could trivially "pass"
