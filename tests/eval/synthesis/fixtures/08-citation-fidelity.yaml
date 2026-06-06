@@ -1,0 +1,47 @@
+# Synthesis eval — citation fidelity
+#
+# Hardest constraint to verify with regex: every inline `[N]` marker in the
+# answer must reference a source the model was actually given. The
+# fixture's `forbidden_patterns` enforces "no [N] above the count of
+# provided sources" via a negative regex; the `required_patterns` enforces
+# "the model cites at least one source" so it can't dodge the test by
+# refusing to cite at all.
+
+query: "What did the team say about the database migration timing?"
+
+sources:
+  - server: confluence-jira
+    tool: confluence_search
+    payload:
+      title: "Database migration RFC"
+      snippet: "Decision: phased rollout, Q3 cutover. Read replicas Q2. RFC merged 2026-05-15."
+      author: "rfc-bot"
+      timestamp: "2026-05-15T10:00:00Z"
+      url: "https://confluence.example.com/x/db-rfc"
+  - server: slack
+    tool: slack_search
+    payload:
+      title: "#eng-decisions"
+      snippet: "Approved by leads. Phase 1 work begins next sprint."
+      author: "Diana"
+      timestamp: "2026-05-16T14:00:00Z"
+      url: "https://slack.example.com/archives/C500/p5000"
+
+forbidden_patterns:
+  # The synthetic prompt provides 2 sources. Any inline citation outside
+  # [1] or [2] is a fabricated reference. This single pattern matches
+  # 0, 3-9, and any multi-digit number — covering all integers a
+  # hallucinating model could emit.
+  - "\\[(?:0|[3-9]|[1-9][0-9]+)\\]"
+
+required_patterns:
+  # The model must cite at least once — otherwise it could trivially "pass"
+  # by refusing to cite anything.
+  - "\\[1\\]|\\[2\\]"
+
+notes: |
+  This fixture is the regression net for "phantom citations" — when the
+  model emits [N] for an N that doesn't correspond to any source. The
+  affiliation-fabrication evals (01-07) caught a different failure mode
+  (over-attribution); this one catches under-attribution / fabrication.
+  Both are important; both belong in the regression set.
