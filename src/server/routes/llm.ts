@@ -3,11 +3,10 @@ import { existsSync } from 'fs';
 import { LlmConfigSchema } from '../../config/schema.js';
 import { writeConfigDoc } from '../../config/write-config.js';
 import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js';
+import { isEnvRef } from '../../config/env-ref.js';
 import { isAllowedBaseUrl } from '../ssrf.js';
 import { runLlmTest as realRunLlmTest, type LlmTestInput, type LlmTestResult } from '../llm-test.js';
 import { zodToApiErrors } from '../../shared/api-errors.js';
-
-const ENV_REF_RE = /^\$\{[A-Z][A-Z0-9_]*\}$/;
 
 interface RouteDeps {
   configPath: () => string;
@@ -56,7 +55,7 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
       };
       const envKv: Record<string, string> = {};
       if (parsed.data.auth_token !== undefined) {
-        if (ENV_REF_RE.test(parsed.data.auth_token)) {
+        if (isEnvRef(parsed.data.auth_token)) {
           llmBlock.auth_token = parsed.data.auth_token;
         } else {
           envKv.SCRY_LLM_TOKEN = parsed.data.auth_token;
@@ -67,9 +66,10 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
       try {
         // Write env first if needed (validates synchronously before any I/O via writeDotEnv).
         if (Object.keys(envKv).length > 0) {
-          // Env first, config second. Same partial-write trade-off as writeConfigAndEnv:
-          // if config write fails after env write, .scry.env has a dangling SCRY_LLM_TOKEN.
-          // Self-healing on retry (env write is idempotent for the same key).
+          // Env first, config second. The two-phase write has a partial-write
+          // trade-off: if the config write fails after the env write,
+          // .scry.env has a dangling SCRY_LLM_TOKEN. Self-healing on retry
+          // (env write is idempotent for the same key).
           await writeDotEnv(deps.envPath(), envKv);
         }
 

@@ -1,12 +1,10 @@
+import type { McpServerEntry } from '@shared/types.js';
 import { apiJson } from './api.js';
 
-export interface McpServerEntry {
-  name: string;
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  enabled: boolean;
-}
+// Re-exported here so callers can `import type { McpServerEntry } from '../lib/mcps.js'`
+// without crossing the @shared boundary directly. Server source of truth lives at
+// `src/shared/mcp-entry.ts`.
+export type { McpServerEntry };
 
 export interface McpInput {
   name: string;
