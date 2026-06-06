@@ -11,8 +11,6 @@
 //   (any other message types are silently ignored)
 
 import { query as realQuery } from '@anthropic-ai/claude-agent-sdk';
-import { join } from 'path';
-import { loadDotEnvFile } from '../config/dotenv.js';
 import type { McpServerConfig } from '../config/types.js';
 import type { RunQueryOptions, RunQueryEvent, SourceCard } from './types.js';
 import { buildSystemPrompt } from './system-prompt.js';
@@ -25,10 +23,13 @@ export interface RunQueryInternalOptions extends RunQueryOptions {
 }
 
 export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<RunQueryEvent> {
-  // 1. Load .scry.env so the SDK sees ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL.
-  loadDotEnvFile(join(opts.scryConfigDir, '.scry.env'));
+  // .scry.env was already loaded by the entry path that called us:
+  //   - server: boot.ts:loadDotEnvFile + loadConfig() per request
+  //   - CLI:    loadConfig() in headless.ts (also loads .scry.env)
+  // We don't reload here — idempotent, but redundant. If you call runQuery
+  // outside those paths, load .scry.env yourself first.
 
-  // 2. Build system prompt + mcpServers map.
+  // Build system prompt + mcpServers map.
   const systemPrompt = buildSystemPrompt({
     registry: opts.config.registry ?? { people: {}, projects: {} },
     fanoutMode: opts.fanoutMode ?? false,
@@ -36,20 +37,27 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   });
   const mcpServers = buildMcpServers(opts.config.mcp_servers);
 
-  // 3. Set up abort.
+  // 2. Set up abort.
   const abortController = new AbortController();
   if (opts.signal) {
     if (opts.signal.aborted) abortController.abort();
     else opts.signal.addEventListener('abort', () => abortController.abort(), { once: true });
   }
 
-  // 4. tool_use_id → { tool, server } correlation. tool_result blocks reference
+  // 3. tool_use_id → { tool, server } correlation. tool_result blocks reference
   // tool_use_id from a prior assistant message; we look up here to attribute
   // the source card correctly.
   const toolUseMap = new Map<string, { tool: string; server: string }>();
-  const tracker = new SourceTracker(opts.priorSources ?? []);
+  // SourceTracker always starts empty per call. Cross-turn citation
+  // continuity was an early Plan B idea (`priorSources` option), but the
+  // route never populated it from storage, and the SDK's `resume` already
+  // handles session continuity at the LLM level. Citation markers are
+  // per-turn — sources are re-emitted by the model in each follow-up.
+  // Removed in PR E cleanup; restore from git history if a real cross-turn
+  // citation feature lands.
+  const tracker = new SourceTracker([]);
 
-  // 5. Disable all built-in Claude Code tools (Task, Bash, Read, Edit, Write,
+  // 4. Disable all built-in Claude Code tools (Task, Bash, Read, Edit, Write,
   // Grep, etc.) by passing `tools: []`. This is the SDK's documented way to
   // restrict the base toolset — `allowedTools` is auto-allow, NOT a restrictor
   // (per the SDK's own d.ts: "To restrict which tools are available, use the
@@ -60,7 +68,7 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   // MCP tools remain available because they come through `mcpServers`, not
   // through the base toolset that `tools` controls.
 
-  // 6. Call SDK (or injected fake).
+  // 5. Call SDK (or injected fake).
   const queryFn = opts.queryFn ?? realQuery;
   const stream = queryFn({
     prompt: opts.prompt,

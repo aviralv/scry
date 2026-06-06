@@ -31,20 +31,29 @@ export function createServer(opts: ServerOptions) {
   app.use('*', originAllowlist(opts.port));
   app.use('*', csrfRequired());
 
+  // Resolve the config path ONCE at server creation. The previous
+  // implementation re-resolved on every request, which was harmless but
+  // surprising — it meant `SCRY_CONFIG` env changes between requests
+  // would silently take effect. We resolve once now; restart `scry serve`
+  // to change the config path. Search route reads `loadConfig(configPath)`
+  // per request so live config-file edits still apply (no caching there).
+  const configPath = resolveConfigPath();
+  const envPath = join(dirname(configPath), '.scry.env');
+
   app.route('/api/health', healthRoute);
   app.route('/api/csrf', csrfRoute);
   app.route('/api/sessions', buildSessionsRoute(opts.sessionsStore));
   app.route('/api/search', buildSearchRoute(opts.sessionsStore));
-  app.route('/api/mcps', buildMcpsRoute({ configPath: () => resolveConfigPath() }));
-  app.route('/api/registry', buildRegistryRoute({ configPath: () => resolveConfigPath() }));
+  app.route('/api/mcps', buildMcpsRoute({ configPath: () => configPath }));
+  app.route('/api/registry', buildRegistryRoute({ configPath: () => configPath }));
   app.route('/api/llm', buildLlmRoute({
-    configPath: () => resolveConfigPath(),
-    envPath: () => join(dirname(resolveConfigPath()), '.scry.env'),
+    configPath: () => configPath,
+    envPath: () => envPath,
   }));
-  app.route('/api/mcps/discover', buildMcpsDiscoverRoute({ configPath: () => resolveConfigPath() }));
+  app.route('/api/mcps/discover', buildMcpsDiscoverRoute({ configPath: () => configPath }));
   app.route('/api/onboarding', buildOnboardingRoute({
-    configPath: () => resolveConfigPath(),
-    envPath: () => join(dirname(resolveConfigPath()), '.scry.env'),
+    configPath: () => configPath,
+    envPath: () => envPath,
   }));
 
   const staticDir = opts.staticDir ?? resolve(__dirname, '../web');
