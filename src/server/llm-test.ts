@@ -1,10 +1,9 @@
+import type { LlmConfig } from '../config/types.js';
+import { parseEnvRef } from '../config/env-ref.js';
 import { isAllowedBaseUrl } from './ssrf.js';
 
-export interface LlmTestInput {
-  base_url: string;
-  model: string;
-  auth_token?: string;
-}
+// LlmConfig already captures base_url / model / auth_token? — reuse it.
+export type LlmTestInput = LlmConfig;
 
 export interface LlmTestOpts {
   timeoutMs?: number;
@@ -12,15 +11,13 @@ export interface LlmTestOpts {
 
 export type LlmTestResult = { ok: true } | { ok: false; error: string };
 
-const ENV_REF_RE = /^\$\{([A-Z][A-Z0-9_]*)\}$/;
-
 function resolveAuthToken(token: string | undefined): { ok: true; value: string | null } | { ok: false; error: string } {
   if (token === undefined) return { ok: true, value: null };
-  const m = ENV_REF_RE.exec(token);
-  if (m) {
-    const v = process.env[m[1]];
+  const refName = parseEnvRef(token);
+  if (refName) {
+    const v = process.env[refName];
     if (v === undefined || v === '') {
-      return { ok: false, error: `env var ${m[1]} not set` };
+      return { ok: false, error: `env var ${refName} not set` };
     }
     return { ok: true, value: v };
   }
@@ -48,7 +45,7 @@ export async function runLlmTest(input: LlmTestInput, opts: LlmTestOpts = {}): P
   };
   if (tokenResult.value) {
     // Detect auth style by ref name when input.auth_token is a ${REF}.
-    const refName = (input.auth_token ?? '').match(ENV_REF_RE)?.[1] ?? '';
+    const refName = parseEnvRef(input.auth_token ?? '') ?? '';
     if (refName.includes('AUTH_TOKEN')) {
       headers['Authorization'] = `Bearer ${tokenResult.value}`;
     } else if (refName.includes('API_KEY')) {

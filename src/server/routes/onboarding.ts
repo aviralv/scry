@@ -7,6 +7,7 @@ import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js
 import { writeConfigDoc, ConfigNameExistsError } from '../../config/write-config.js';
 import { healthCheck as realHealthCheck, type HealthCheckResult } from '../mcp-health.js';
 import type { McpServerConfig } from '../../config/types.js';
+import { toMcpEntry } from '../../shared/mcp-entry.js';
 import { zodToApiErrors } from '../../shared/api-errors.js';
 
 const NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -24,14 +25,6 @@ interface RouteDeps {
   configPath: () => string;
   envPath: () => string;
   healthCheck?: (server: McpServerConfig, opts?: { timeoutMs?: number }) => Promise<HealthCheckResult>;
-}
-
-interface McpServerEntry {
-  name: string;
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  enabled: boolean;
 }
 
 function readDoc(configPath: string): ReturnType<typeof parseDocument> {
@@ -79,9 +72,6 @@ function computeDetectedRefs(envKeys: string[]): string[] {
   return out;
 }
 
-function toEntry(name: string, cfg: McpServerConfig): McpServerEntry {
-  return { name, command: cfg.command, args: cfg.args, env: cfg.env, enabled: cfg.enabled ?? true };
-}
 
 export function buildOnboardingRoute(deps: RouteDeps): Hono {
   const healthCheck = deps.healthCheck ?? realHealthCheck;
@@ -107,7 +97,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
           : null;
 
       const mcpsRaw: Record<string, McpServerConfig> = json.mcp_servers ?? {};
-      const mcps = Object.entries(mcpsRaw).map(([n, s]) => toEntry(n, s));
+      const mcps = Object.entries(mcpsRaw).map(([n, s]) => toMcpEntry(n, s));
 
       // Default onboarding state if block is absent.
       const onboarding = json.onboarding ?? { completed: false };
@@ -224,9 +214,9 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
       const hc = await healthCheck(probeServer, { timeoutMs: 15_000 });
       if (!hc.ok) return c.json({ error: 'health-check-failed', message: hc.error }, 422);
 
-      // Two-phase write: env first, config second.
-      // Same partial-write trade-off as writeConfigAndEnv: if config write fails after
-      // env write, .scry.env has dangling keys. Self-healing on retry.
+      // Two-phase write: env first, config second. Partial-write trade-off:
+      // if the config write fails after the env write, .scry.env has dangling
+      // keys. Self-healing on retry (env write is idempotent per key).
       try {
         if (Object.keys(parsed.data.envValues).length > 0) {
           await writeDotEnv(deps.envPath(), parsed.data.envValues);
@@ -269,6 +259,6 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
         throw err;
       }
 
-      return c.json({ server: toEntry(parsed.data.name, newServer) }, 201);
+      return c.json({ server: toMcpEntry(parsed.data.name, newServer) }, 201);
     });
 }

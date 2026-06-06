@@ -6,7 +6,6 @@ import { mkdirSync } from 'fs';
 import type {
   SessionRow,
   StoredTurn,
-  InsertSession,
   UpdateSession,
   ListOpts,
 } from './types.js';
@@ -51,7 +50,7 @@ export class SessionsStore {
     }
   }
 
-  insert(s: InsertSession): void {
+  insert(s: SessionRow): void {
     this.db
       .prepare(
         `INSERT INTO sessions (id, cwd, title, turns_json, created_at, updated_at)

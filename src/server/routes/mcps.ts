@@ -6,6 +6,7 @@ import { McpServerConfigSchema, McpServersMapSchema } from '../../config/schema.
 import { writeConfig, ConfigValidationError, ConfigNameExistsError, ConfigNotFoundError } from '../../config/write-config.js';
 import { healthCheck as realHealthCheck, type HealthCheckResult } from '../mcp-health.js';
 import type { McpServerConfig } from '../../config/types.js';
+import { toMcpEntry } from '../../shared/mcp-entry.js';
 import { zodToApiErrors } from '../../shared/api-errors.js';
 
 const NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/;
@@ -22,14 +23,6 @@ const PatchBodySchema = McpServerConfigSchema.partial().refine(
 interface RouteDeps {
   configPath: () => string;
   healthCheck?: (server: McpServerConfig, opts?: { timeoutMs?: number }) => Promise<HealthCheckResult>;
-}
-
-interface McpServerEntry {
-  name: string;
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  enabled: boolean;
 }
 
 type LoadResult =
@@ -63,10 +56,6 @@ function loadServers(configPath: string): LoadResult {
   return { kind: 'ok', servers: validated.data };
 }
 
-function toEntry(name: string, cfg: McpServerConfig): McpServerEntry {
-  return { name, command: cfg.command, args: cfg.args, env: cfg.env, enabled: cfg.enabled ?? true };
-}
-
 export function buildMcpsRoute(deps: RouteDeps): Hono {
   const healthCheck = deps.healthCheck ?? realHealthCheck;
 
@@ -75,7 +64,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
       const r = loadServers(deps.configPath());
       if (r.kind === 'missing') return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
       if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
-      const entries = Object.entries(r.servers).map(([n, s]) => toEntry(n, s));
+      const entries = Object.entries(r.servers).map(([n, s]) => toMcpEntry(n, s));
       return c.json({ servers: entries });
     })
 
@@ -119,7 +108,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
         }
         throw err;
       }
-      return c.json({ server: toEntry(name, serverCfg) }, 201);
+      return c.json({ server: toMcpEntry(name, serverCfg) }, 201);
     })
 
     .patch('/:name', async (c) => {
@@ -165,7 +154,7 @@ export function buildMcpsRoute(deps: RouteDeps): Hono {
         if (err instanceof ConfigValidationError) return c.json({ error: 'invalid-body', errors: err.issues }, 400);
         throw err;
       }
-      return c.json({ server: toEntry(name, finalMerged) });
+      return c.json({ server: toMcpEntry(name, finalMerged) });
     })
 
     .delete('/:name', async (c) => {

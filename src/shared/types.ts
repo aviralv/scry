@@ -15,5 +15,6 @@ export type ApiResult<T> =
 export type { SourceCard, Citation, RunQueryEvent } from '../engine/types.js';
 export type { SessionRow, StoredTurn } from '../storage/types.js';
 export type { ApiErrorBody, ApiErrorIssue } from './api-errors.js';
-export type { Registry, Person, Project, PersonIdentifiers, ProjectRouting } from '../config/types.js';
+export type { Registry, Person, Project, PersonIdentifiers, ProjectRouting, LlmConfig } from '../config/types.js';
+export type { McpServerEntry } from './mcp-entry.js';
 export { zodToApiErrors } from './api-errors.js';

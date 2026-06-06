@@ -1,13 +1,12 @@
 import { spawn } from 'child_process';
 import type { McpServerConfig } from '../config/types.js';
+import { parseEnvRef } from '../config/env-ref.js';
 
 export interface HealthCheckOk { ok: true; toolCount: number; toolName?: string }
 export interface HealthCheckErr { ok: false; error: string }
 export type HealthCheckResult = HealthCheckOk | HealthCheckErr;
 
 export interface HealthCheckOpts { timeoutMs?: number }
-
-const ENV_REF_RE = /^\$\{([A-Z][A-Z0-9_]*)\}$/;
 
 /**
  * Resolve env values *only* for refs naming a key declared in the same entry's
@@ -22,10 +21,10 @@ export function resolveDeclaredEnv(entryEnv: Record<string, string>): Record<str
   const declaredKeys = new Set(Object.keys(entryEnv));
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(entryEnv)) {
-    const m = ENV_REF_RE.exec(v);
-    if (m && declaredKeys.has(m[1])) {
+    const refName = parseEnvRef(v);
+    if (refName && declaredKeys.has(refName)) {
       // The ref names a key in this same entry — resolve from process.env.
-      out[k] = process.env[m[1]] ?? '';
+      out[k] = process.env[refName] ?? '';
     } else {
       // Either a safe-literal, or a ref to a non-declared name. Pass through.
       out[k] = v;

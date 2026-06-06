@@ -16,15 +16,6 @@ export interface SessionRow {
   updatedAt: number;
 }
 
-export interface InsertSession {
-  id: string;
-  cwd: string;
-  title: string;
-  turns: StoredTurn[];
-  createdAt: number;
-  updatedAt: number;
-}
-
 export interface UpdateSession {
   title?: string;
   turns?: StoredTurn[];
