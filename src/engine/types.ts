@@ -29,7 +29,6 @@ export interface RunQueryOptions {
   signal?: AbortSignal;
   resume?: string;             // SDK session_id from a prior turn
   fanoutMode?: boolean;        // adds a system-prompt directive
-  priorSources?: SourceCard[]; // session's prior sources for follow-up turns
 }
 
 export type RunQueryEvent =
