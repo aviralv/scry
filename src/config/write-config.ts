@@ -132,12 +132,6 @@ export async function writeConfig(path: string, merge: WriteConfigMergeFn): Prom
   }
 }
 
-// Helper used by route handlers so they don't have to import yaml directly.
-export async function readConfigDoc(path: string): Promise<Document> {
-  const raw = await fs.readFile(path, 'utf-8');
-  return parseDocument(raw);
-}
-
 export type WriteConfigDocMutator = (doc: Document) => void | Promise<void>;
 
 /**

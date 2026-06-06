@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { discoverFromClaudeConfig } from '../../src/discovery/claude-config.js';
+import { discoverFromClaudeConfig, type ClaudeConfigShape } from '../../src/discovery/claude-config.js';
 
 describe('discoverFromClaudeConfig', () => {
   it('extracts mcpServers from claude config', () => {
-    const config = {
+    const config: ClaudeConfigShape = {
       mcpServers: {
         slack: { command: 'slack-mcp', args: [] },
         confluence: { command: 'confluence-jira-mcp', env: { ATLASSIAN_URL: 'https://x.atlassian.net' } },
@@ -20,7 +20,10 @@ describe('discoverFromClaudeConfig', () => {
   });
 
   it('handles malformed entries gracefully', () => {
-    const config = { mcpServers: { broken: 'not an object' } };
+    // Deliberately wrong shape — exercises the runtime guard that
+    // filters non-object entries. Cast around the type so the test
+    // can assert the runtime behavior is still defensive.
+    const config = { mcpServers: { broken: 'not an object' } } as unknown as ClaudeConfigShape;
     expect(discoverFromClaudeConfig(config)).toEqual([]);
   });
 

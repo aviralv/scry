@@ -64,37 +64,6 @@ export interface Onboarding {
   mcps_skipped?: boolean;
 }
 
-export interface SearchResult {
-  source: string;
-  title: string;
-  snippet: string;
-  author: string | null;
-  timestamp: string;
-  url: string | null;
-  metadata: Record<string, string>;
-  confidence?: 'high' | 'low';
-}
-
-export interface SearchAction {
-  server: string;
-  tool: string;
-  params: Record<string, unknown>;
-}
-
-export interface Citation {
-  index: number;
-  source: string;
-  title: string;
-  url: string | null;
-  author: string | null;
-  timestamp: string;
-}
-
-export interface SynthesisResult {
-  answer: string;
-  citations: Citation[];
-}
-
 export interface BundledServer {
   name: string;
   slug: string;        // canonical slug used as the mcp_servers.<key> entry key
