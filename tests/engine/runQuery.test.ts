@@ -179,6 +179,60 @@ describe('runQuery', () => {
     }
   });
 
+  it('takes the first text block when tool_result has multiple blocks (documented "first wins")', async () => {
+    // parseToolResult comment: "Most servers send a single text block per
+    // tool_result; we take the first block to avoid joining multiple
+    // JSON-formatted blocks into invalid JSON. When multiple blocks
+    // exist, only the first is used — that's a known limitation."
+    // Lock that contract — if we ever change to "concat" or "last wins"
+    // it should be a deliberate, test-visible decision.
+    const fakeQuery = async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-multi' };
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 't-multi', name: 'slack_search', input: { query: 'x' } }],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 't-multi',
+              content: [
+                { type: 'text', text: JSON.stringify({ title: 'FIRST', snippet: 'first block' }) },
+                { type: 'text', text: JSON.stringify({ title: 'SECOND', snippet: 'second block' }) },
+              ],
+            },
+          ],
+        },
+      };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok [1]' }] } };
+      yield { type: 'result', subtype: 'success', session_id: 'sess-multi' };
+    };
+
+    const events = await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        queryFn: fakeQuery as never,
+      }),
+    );
+
+    const tr = events.find((e) => e.type === 'tool-result');
+    expect(tr).toBeDefined();
+    if (tr && tr.type === 'tool-result') {
+      expect(tr.source.title).toBe('FIRST');
+      expect(tr.source.snippet).toBe('first block');
+    }
+    // Exactly one source — the second block was dropped, not appended.
+    const toolResults = events.filter((e) => e.type === 'tool-result');
+    expect(toolResults.length).toBe(1);
+  });
+
   it('emits sources-finalized after final assistant text and before done', async () => {
     const fakeQuery = async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-fin' };
@@ -342,5 +396,58 @@ describe('runQuery', () => {
     expect(capturedOptions!.tools).toEqual([]);
     // The legacy `allowedTools` should NOT be set — `tools: []` supersedes it.
     expect(capturedOptions!.allowedTools).toBeUndefined();
+  });
+
+  it('injects the fanout system-prompt directive when fanoutMode is true', async () => {
+    // The fanout mode flag flows config → buildSystemPrompt → SDK system
+    // prompt. If the route ever stops forwarding the flag, the prompt
+    // wouldn't carry the directive. Lock the chain in.
+    let capturedSystemPrompt: string | null = null;
+    const fakeQuery = ((args: { prompt: string; options: Record<string, unknown> }) => {
+      capturedSystemPrompt = args.options.systemPrompt as string;
+      return (async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 'sess-fanout' };
+        yield { type: 'result', subtype: 'success', session_id: 'sess-fanout' };
+      })();
+    }) as never;
+
+    await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        fanoutMode: true,
+        queryFn: fakeQuery,
+      }),
+    );
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    // The fanout directive is asserted in system-prompt.test.ts; here we
+    // only need to confirm the flag reached buildSystemPrompt and the
+    // directive landed in the prompt the SDK sees.
+    expect(capturedSystemPrompt!).toMatch(/fanout|all.*configured.*tools/i);
+  });
+
+  it('does NOT inject the fanout directive by default', async () => {
+    let capturedSystemPrompt: string | null = null;
+    const fakeQuery = ((args: { prompt: string; options: Record<string, unknown> }) => {
+      capturedSystemPrompt = args.options.systemPrompt as string;
+      return (async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 'sess-default' };
+        yield { type: 'result', subtype: 'success', session_id: 'sess-default' };
+      })();
+    }) as never;
+
+    await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        queryFn: fakeQuery,
+      }),
+    );
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt!).not.toMatch(/fanout mode/i);
   });
 });

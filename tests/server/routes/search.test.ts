@@ -119,6 +119,38 @@ describe('POST /api/search', () => {
     expect(body.error).toBe('invalid-body');
   });
 
+  it('accepts fanoutMode: true in body without 400', async () => {
+    // The frontend's "fanout mode" checkbox sends fanoutMode: true. The
+    // schema must accept it, the route must forward it through. End-to-end
+    // assertion that the flag isn't silently dropped by the body parser.
+    const app = createServer({ port: 6678, sessionsStore: store });
+    const res = await app.request('/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Scry-Csrf': getCsrfToken(),
+      },
+      body: JSON.stringify({ query: 'x', fanoutMode: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/event-stream/);
+  });
+
+  it('rejects fanoutMode of wrong type', async () => {
+    const app = createServer({ port: 6678, sessionsStore: store });
+    const res = await app.request('/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Scry-Csrf': getCsrfToken(),
+      },
+      body: JSON.stringify({ query: 'x', fanoutMode: 'yes' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid-body');
+  });
+
   it('returns text/event-stream on valid POST', async () => {
     const app = createServer({ port: 6678, sessionsStore: store });
     const res = await app.request('/api/search', {
