@@ -22,8 +22,8 @@ const McpsBody = z.object({
 });
 
 interface RouteDeps {
-  configPath: () => string;
-  envPath: () => string;
+  configPath: string;
+  envPath: string;
   healthCheck?: (server: McpServerConfig, opts?: { timeoutMs?: number }) => Promise<HealthCheckResult>;
 }
 
@@ -78,7 +78,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
 
   return new Hono()
     .get('/', (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
       const doc = readDoc(cfgPath);
@@ -102,7 +102,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
       // Default onboarding state if block is absent.
       const onboarding = json.onboarding ?? { completed: false };
 
-      const envKeys = readEnvKeys(deps.envPath());
+      const envKeys = readEnvKeys(deps.envPath);
 
       return c.json({
         llm,
@@ -114,7 +114,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
     })
 
     .post('/complete', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
       await writeConfigDoc(cfgPath, (doc) => {
@@ -126,7 +126,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
     })
 
     .post('/skip', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
       let raw: unknown;
@@ -153,7 +153,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
     })
 
     .post('/mcps', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
       let raw: unknown;
@@ -219,7 +219,7 @@ export function buildOnboardingRoute(deps: RouteDeps): Hono {
       // keys. Self-healing on retry (env write is idempotent per key).
       try {
         if (Object.keys(parsed.data.envValues).length > 0) {
-          await writeDotEnv(deps.envPath(), parsed.data.envValues);
+          await writeDotEnv(deps.envPath, parsed.data.envValues);
         }
 
         await writeConfigDoc(cfgPath, (doc) => {

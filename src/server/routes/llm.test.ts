@@ -27,8 +27,8 @@ beforeEach(() => {
   llmTestMock = vi.fn().mockResolvedValue({ ok: true });
   app = new Hono();
   app.route('/api/llm', buildLlmRoute({
-    configPath: () => cfg,
-    envPath: () => envPath,
+    configPath: cfg,
+    envPath: envPath,
     llmTest: llmTestMock,
   }));
 });

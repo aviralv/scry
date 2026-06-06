@@ -21,7 +21,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe('GET /api/mcps/discover', () => {
   it('returns bundled list and pathInstalled (none on PATH)', async () => {
     app.route('/api/mcps/discover', buildMcpsDiscoverRoute({
-      configPath: () => cfg,
+      configPath: cfg,
       which: () => null,
     }));
     const r = await app.request('/api/mcps/discover');
@@ -34,7 +34,7 @@ describe('GET /api/mcps/discover', () => {
 
   it('returns the commands found on PATH', async () => {
     app.route('/api/mcps/discover', buildMcpsDiscoverRoute({
-      configPath: () => cfg,
+      configPath: cfg,
       which: (cmd) => (cmd === 'slack-mcp' ? '/usr/local/bin/slack-mcp' : null),
     }));
     const r = await app.request('/api/mcps/discover');
@@ -46,7 +46,7 @@ describe('GET /api/mcps/discover', () => {
   it('returns 412 when config does not exist', async () => {
     rmSync(cfg);
     app.route('/api/mcps/discover', buildMcpsDiscoverRoute({
-      configPath: () => cfg,
+      configPath: cfg,
       which: () => null,
     }));
     const r = await app.request('/api/mcps/discover');

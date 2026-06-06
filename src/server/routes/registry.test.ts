@@ -37,7 +37,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'scry-registry-route-'));
   cfg = join(dir, 'scry.config.yaml');
   app = new Hono();
-  app.route('/api/registry', buildRegistryRoute({ configPath: () => cfg }));
+  app.route('/api/registry', buildRegistryRoute({ configPath: cfg }));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

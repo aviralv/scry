@@ -17,8 +17,8 @@ beforeEach(() => {
   app = new Hono();
   app.use('*', csrfRequired());
   app.route('/api/onboarding', buildOnboardingRoute({
-    configPath: () => cfg,
-    envPath: () => join(dir, '.scry.env'),
+    configPath: cfg,
+    envPath: join(dir, '.scry.env'),
     healthCheck: async () => ({ ok: true, toolCount: 1 }),
   }));
 });

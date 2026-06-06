@@ -9,8 +9,8 @@ import { runLlmTest as realRunLlmTest, type LlmTestInput, type LlmTestResult } f
 import { zodToApiErrors } from '../../shared/api-errors.js';
 
 interface RouteDeps {
-  configPath: () => string;
-  envPath: () => string;
+  configPath: string;
+  envPath: string;
   llmTest?: (input: LlmTestInput) => Promise<LlmTestResult>;
 }
 
@@ -34,7 +34,7 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
     })
 
     .put('/', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
       let raw: unknown;
@@ -70,7 +70,7 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
           // trade-off: if the config write fails after the env write,
           // .scry.env has a dangling SCRY_LLM_TOKEN. Self-healing on retry
           // (env write is idempotent for the same key).
-          await writeDotEnv(deps.envPath(), envKv);
+          await writeDotEnv(deps.envPath, envKv);
         }
 
         await writeConfigDoc(cfgPath, (doc) => {

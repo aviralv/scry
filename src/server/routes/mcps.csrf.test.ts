@@ -19,7 +19,7 @@ beforeEach(() => {
   app = new Hono();
   app.use('*', csrfRequired());
   app.route('/api/mcps', buildMcpsRoute({
-    configPath: () => cfg,
+    configPath: cfg,
     healthCheck: async () => ({ ok: true, toolCount: 0 }),
   }));
 });

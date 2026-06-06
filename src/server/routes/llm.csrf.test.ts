@@ -17,8 +17,8 @@ beforeEach(() => {
   app = new Hono();
   app.use('*', csrfRequired());
   app.route('/api/llm', buildLlmRoute({
-    configPath: () => cfg,
-    envPath: () => join(dir, '.scry.env'),
+    configPath: cfg,
+    envPath: join(dir, '.scry.env'),
     llmTest: async () => ({ ok: true }),
   }));
 });

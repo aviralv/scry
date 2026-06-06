@@ -12,7 +12,7 @@ const PutBodySchema = z.object({
 });
 
 interface RouteDeps {
-  configPath: () => string;
+  configPath: string;
 }
 
 const EMPTY_REGISTRY: Registry = { people: {}, projects: {} };
@@ -51,13 +51,13 @@ function loadRegistry(configPath: string): LoadResult {
 export function buildRegistryRoute(deps: RouteDeps): Hono {
   return new Hono()
     .get('/', (c) => {
-      const r = loadRegistry(deps.configPath());
+      const r = loadRegistry(deps.configPath);
       if (r.kind === 'missing') return c.json({ error: 'config-required', message: 'scry.config.yaml does not exist' }, 412);
       if (r.kind === 'malformed') return c.json({ error: 'config-malformed', message: r.detail }, 500);
       return c.json({ registry: r.registry });
     })
     .put('/', async (c) => {
-      const cfgPath = deps.configPath();
+      const cfgPath = deps.configPath;
       if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
 
       let raw: unknown;
