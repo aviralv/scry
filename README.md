@@ -38,7 +38,7 @@ query → discover sources → parallel search → normalize → synthesize → 
 | Microsoft 365 | `ms365-intent-mcp` | `uv tool install git+https://github.com/aviralv/ms365-intent-mcp` |
 | Confluence & Jira | `confluence-jira-mcp` | `uv tool install git+https://github.com/aviralv/confluence-jira-mcp` |
 
-Any MCP server with search tools works — these three are bundled with optimized normalizers.
+Any MCP server with search tools works — these three are bundled with metadata that lets `scry init` add them in one step.
 
 ## Configuration
 
@@ -77,11 +77,9 @@ search_tools:
   slack:
     - tool: "slack_search"
       params: { format: "json" }
-      normalizer: "slack"
   ms365:
     - tool: "outlook_list_messages"
       params: { format: "json" }
-      normalizer: "email"
 
 registry:  # optional — enables context-aware routing
   projects:
@@ -111,14 +109,6 @@ Options:
 |----------|---------|
 | `SCRY_CONFIG` | Custom config file path |
 | `ANTHROPIC_API_KEY` | LLM API key (used via `${...}` in config) |
-
-## How Normalizers Work
-
-Each MCP server returns different JSON shapes. Scry uses **normalizers** to convert them into a common format:
-
-- **Built-in**: `slack`, `confluence`, `email` — optimized for known response shapes
-- **Generic fallback**: Best-effort extraction for unknown servers (results marked low-confidence)
-- **Config-driven**: Set `normalizer: "slack"` in `search_tools` to assign a normalizer to any tool
 
 ## Requirements
 

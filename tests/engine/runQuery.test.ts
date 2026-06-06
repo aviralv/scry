@@ -38,7 +38,7 @@ describe('runQuery', () => {
     expect(events[events.length - 1]).toMatchObject({ type: 'done', sessionId: 'sess-1' });
   });
 
-  it('records tool_results and emits citations on [N] markers', async () => {
+  it('records tool_results and surfaces them in the final answer', async () => {
     const fakeQuery = async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-2' };
       yield {
@@ -82,9 +82,9 @@ describe('runQuery', () => {
       expect(toolResult.tool).toBe('slack_search');
     }
 
-    const citation = events.find((e) => e.type === 'citation');
-    expect(citation).toBeDefined();
-
+    // Citation events were dropped in PR C — sources arrive via tool-result
+    // and are finalized via sources-finalized / done. Inline citation
+    // markers in the prose appear in `done.finalAnswer`.
     const done = events[events.length - 1];
     expect(done.type).toBe('done');
     if (done.type === 'done') {

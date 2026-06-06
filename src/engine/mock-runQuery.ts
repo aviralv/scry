@@ -18,7 +18,6 @@ function makeCards(): SourceCard[] {
       url: 'https://slack.example.com/archives/C1/p1',
       author: 'Sarah',
       timestamp: '2026-05-30T14:00:00Z',
-      raw: null,
     },
     {
       index: 2,
@@ -29,7 +28,6 @@ function makeCards(): SourceCard[] {
       url: 'https://confluence.example.com/x/pricing-rfc',
       author: 'rfc-bot',
       timestamp: '2026-05-29T10:00:00Z',
-      raw: null,
     },
   ];
 }

@@ -14,7 +14,6 @@ export interface McpServerConfig {
 export interface SearchToolConfig {
   tool: string;
   params?: Record<string, unknown>;
-  normalizer?: string;
 }
 
 export interface ScryConfig {

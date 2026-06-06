@@ -10,7 +10,6 @@ export interface SourceCard {
   url?: string;
   author?: string;
   timestamp?: string;
-  raw: unknown;         // original tool_result content
 }
 
 export interface Citation {
@@ -37,7 +36,6 @@ export type RunQueryEvent =
   | { type: 'tool-call'; tool: string; args: unknown }
   | { type: 'tool-result'; tool: string; sourceIndex: number; source: SourceCard }
   | { type: 'assistant-text'; text: string }
-  | { type: 'citation'; index: number; source: SourceCard }
   | { type: 'sources-finalized'; sources: SourceCard[] }    // canonical source list from Claude's enumeration
   | { type: 'done'; sessionId: string; sources: SourceCard[]; finalAnswer: string }
   | { type: 'error'; message: string };
