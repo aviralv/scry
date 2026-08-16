@@ -45,7 +45,13 @@ export function TurnBlock({
         stripEnumeration={finalized}
         onCiteHover={(idx) => setHighlighted(idx ?? undefined)}
         onCiteClick={(idx) => {
-          // Scroll to a card scoped to THIS turn — id includes turnIndex.
+          // Open the source URL in a new tab if available.
+          const card = cards.find((c) => c.index === idx);
+          if (card?.url) {
+            window.open(card.url, '_blank', 'noopener,noreferrer');
+            return;
+          }
+          // Fallback: scroll to the source card in the rail.
           const el = document.getElementById(`source-card-${turnIndex}-${idx}`);
           el?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
         }}
