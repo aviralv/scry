@@ -198,10 +198,49 @@ function parseToolResultForCard(
   tracker: SourceTracker,
 ): SourceCard | null {
   let payload: { title?: string; snippet?: string; author?: string; timestamp?: string; url?: string } = {};
+
+  // Strip MCP untrusted content markers if present.
+  let cleaned = raw;
+  const beginMarker = cleaned.match(/\[BEGIN UNTRUSTED CONTENT FROM [^\]]+\]\n?/);
+  if (beginMarker) cleaned = cleaned.slice(beginMarker.index! + beginMarker[0].length);
+  const endMarker = cleaned.match(/\n?\[END UNTRUSTED CONTENT[^\]]*\]/);
+  if (endMarker) cleaned = cleaned.slice(0, endMarker.index);
+
   try {
-    const parsed = JSON.parse(raw);
-    const first = Array.isArray(parsed) ? parsed[0] : parsed;
-    payload = first ?? {};
+    const parsed = JSON.parse(cleaned.trim());
+
+    // Handle search_results format (Slack MCP, etc.): { messages: [...] }
+    if (parsed.messages && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+      const msg = parsed.messages[0];
+      payload = {
+        title: msg.channel_name ?? msg.subject ?? 'untitled',
+        snippet: (msg.text ?? msg.snippet ?? '').slice(0, 200),
+        url: msg.permalink ?? msg.url ?? msg.link,
+        author: msg.user ?? msg.author ?? msg.from,
+        timestamp: msg.ts_iso ?? msg.timestamp ?? msg.ts,
+      };
+    }
+    // Handle results array format: [{ title, url, ... }]
+    else if (Array.isArray(parsed) && parsed.length > 0) {
+      const first = parsed[0];
+      payload = {
+        title: first.title ?? first.name ?? 'untitled',
+        snippet: (first.snippet ?? first.text ?? first.excerpt ?? '').slice(0, 200),
+        url: first.url ?? first.permalink ?? first.link,
+        author: first.author ?? first.user ?? first.from,
+        timestamp: first.timestamp ?? first.ts_iso ?? first.date,
+      };
+    }
+    // Handle flat object: { title, url, ... }
+    else if (parsed && typeof parsed === 'object') {
+      payload = {
+        title: parsed.title ?? parsed.name ?? parsed.subject ?? 'untitled',
+        snippet: (parsed.snippet ?? parsed.text ?? parsed.excerpt ?? '').slice(0, 200),
+        url: parsed.url ?? parsed.permalink ?? parsed.link,
+        author: parsed.author ?? parsed.user ?? parsed.from,
+        timestamp: parsed.timestamp ?? parsed.ts_iso ?? parsed.date,
+      };
+    }
   } catch {
     payload = { title: 'tool result', snippet: raw.slice(0, 200) };
   }
