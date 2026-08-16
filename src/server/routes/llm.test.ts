@@ -85,6 +85,43 @@ describe('POST /api/llm/test', () => {
   });
 });
 
+describe('GET /api/llm', () => {
+  it('returns current llm config with provider defaulting to anthropic', async () => {
+    const r = await app.request('/api/llm', { method: 'GET' });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.llm).toEqual({
+      provider: 'anthropic',
+      base_url: 'https://api.anthropic.com',
+      model: 'claude-haiku-4-5-20251001',
+      auth_token: '${ANTHROPIC_API_KEY}',
+      hasAuth: true,
+    });
+  });
+
+  it('returns llm: null when llm block is empty', async () => {
+    writeFileSync(cfg, 'llm: {}\nmcp_servers: {}\nsearch_tools: {}\n');
+    const r = await app.request('/api/llm', { method: 'GET' });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.llm).toBeNull();
+  });
+
+  it('returns 412 when config does not exist', async () => {
+    rmSync(cfg);
+    const r = await app.request('/api/llm', { method: 'GET' });
+    expect(r.status).toBe(412);
+  });
+
+  it('returns explicit provider when set in config', async () => {
+    writeFileSync(cfg, 'llm:\n  provider: anthropic\n  base_url: https://api.anthropic.com\n  model: claude-haiku-4-5-20251001\n  auth_token: ${KEY}\nmcp_servers: {}\nsearch_tools: {}\n');
+    const r = await app.request('/api/llm', { method: 'GET' });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.llm.provider).toBe('anthropic');
+  });
+});
+
 describe('PUT /api/llm', () => {
   it('writes the llm block when given a ${REF} auth_token', async () => {
     const r = await app.request('/api/llm', {

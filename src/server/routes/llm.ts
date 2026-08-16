@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { parse } from 'yaml';
 import { LlmConfigSchema } from '../../config/schema.js';
 import { writeConfigDoc } from '../../config/write-config.js';
 import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js';
@@ -18,6 +19,29 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
   const llmTest = deps.llmTest ?? realRunLlmTest;
 
   return new Hono()
+    .get('/', (c) => {
+      const cfgPath = deps.configPath;
+      if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
+
+      const raw = readFileSync(cfgPath, 'utf-8');
+      const json = parse(raw) ?? {};
+      const llmRaw = json.llm;
+
+      if (!llmRaw || !llmRaw.base_url || !llmRaw.model) {
+        return c.json({ llm: null });
+      }
+
+      return c.json({
+        llm: {
+          provider: llmRaw.provider ?? 'anthropic',
+          base_url: llmRaw.base_url,
+          model: llmRaw.model,
+          auth_token: llmRaw.auth_token ?? null,
+          hasAuth: typeof llmRaw.auth_token === 'string' && llmRaw.auth_token.length > 0,
+        },
+      });
+    })
+
     .post('/test', async (c) => {
       let raw: unknown;
       try { raw = await c.req.json(); } catch { return c.json({ error: 'invalid-body', message: 'malformed JSON' }, 400); }
@@ -53,6 +77,9 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
         base_url: parsed.data.base_url,
         model: parsed.data.model,
       };
+      if (parsed.data.provider) {
+        llmBlock.provider = parsed.data.provider;
+      }
       const envKv: Record<string, string> = {};
       if (parsed.data.auth_token !== undefined) {
         if (isEnvRef(parsed.data.auth_token)) {
