@@ -85,7 +85,7 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       tools: [],
-    } as never, // SDK option type is wide; conservative cast
+    },
   });
 
   let sessionId = '';
