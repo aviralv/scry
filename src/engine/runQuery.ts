@@ -1,232 +1,202 @@
 // src/engine/runQuery.ts
-// Wraps @anthropic-ai/claude-agent-sdk's query() async iterable, dispatching
-// SDK messages into typed RunQueryEvents that the CLI and (later) the web
-// server consume.
-//
-// SDK message types dispatched on (verified in node_modules during T1):
-//   - 'system' + subtype 'init'         → session-init
-//   - 'assistant' (message.content[])   → walk text + tool_use blocks
-//   - 'user'      (message.content[])   → walk tool_result blocks
-//   - 'result'                          → done
-//   (any other message types are silently ignored)
+// Provider-agnostic agentic loop. Replaces the Claude Agent SDK with
+// direct LLM API calls + MCP tool execution. Supports any provider that
+// implements the Provider interface.
 
-import { query as realQuery } from '@anthropic-ai/claude-agent-sdk';
-import type { McpServerConfig } from '../config/types.js';
+import type { McpServerConfig, LlmProvider } from '../config/types.js';
 import type { RunQueryOptions, RunQueryEvent, SourceCard } from './types.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { SourceTracker } from './source-tracker.js';
 import { parseSources } from './parse-sources.js';
+import { getProvider } from './providers/index.js';
+import type { Provider, Message, ToolUseBlock, ProviderEvent } from './providers/types.js';
+import { connectMcpServers, callTool, disconnectAll, type McpConnection } from './mcp-client.js';
+import { parseEnvRef } from '../config/env-ref.js';
 
 export interface RunQueryInternalOptions extends RunQueryOptions {
-  /** Dependency-inject a fake query function for tests. */
-  queryFn?: typeof realQuery;
+  /** Dependency-inject fake MCP connections for tests. */
+  mcpConnections?: McpConnection[];
+  /** Dependency-inject a fake provider for tests. */
+  providerOverride?: Provider;
 }
 
-export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<RunQueryEvent> {
-  // .scry.env was already loaded by the entry path that called us:
-  //   - server: boot.ts:loadDotEnvFile + loadConfig() per request
-  //   - CLI:    loadConfig() in headless.ts (also loads .scry.env)
-  // We don't reload here — idempotent, but redundant. If you call runQuery
-  // outside those paths, load .scry.env yourself first.
+const MAX_TOOL_TURNS = 10;
 
-  // Build system prompt + mcpServers map.
+export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<RunQueryEvent> {
+  const provider = opts.providerOverride ?? getProvider((opts.config.llm.provider as LlmProvider) ?? 'anthropic');
+
+  // Build system prompt.
   const systemPrompt = buildSystemPrompt({
     registry: opts.config.registry ?? { people: {}, projects: {} },
     fanoutMode: opts.fanoutMode ?? false,
     serverNames: Object.keys(opts.config.mcp_servers),
   });
-  const mcpServers = buildMcpServers(opts.config.mcp_servers);
 
-  // Set up abort.
-  const abortController = new AbortController();
-  if (opts.signal) {
-    if (opts.signal.aborted) abortController.abort();
-    else opts.signal.addEventListener('abort', () => abortController.abort(), { once: true });
+  // Resolve auth token from env refs.
+  const rawToken = opts.config.llm.auth_token;
+  let apiKey: string | null = null;
+  if (rawToken) {
+    const refName = parseEnvRef(rawToken);
+    if (refName) {
+      apiKey = process.env[refName] ?? null;
+    } else {
+      apiKey = rawToken;
+    }
   }
 
-  // tool_use_id → { tool, server } correlation. tool_result blocks reference
-  // tool_use_id from a prior assistant message; we look up here to attribute
-  // the source card correctly.
-  const toolUseMap = new Map<string, { tool: string; server: string }>();
-  // SourceTracker always starts empty per call. Cross-turn citation
-  // continuity was an early Plan B idea (`priorSources` option), but the
-  // route never populated it from storage, and the SDK's `resume` already
-  // handles session continuity at the LLM level. Citation markers are
-  // per-turn — sources are re-emitted by the model in each follow-up.
-  // Removed in PR E cleanup; restore from git history if a real cross-turn
-  // citation feature lands.
+  // Connect to MCP servers (or use injected connections).
+  let connections: McpConnection[];
+  let ownedConnections = false;
+  if (opts.mcpConnections) {
+    connections = opts.mcpConnections;
+  } else {
+    // Resolve env refs in server configs before connecting.
+    const resolvedServers = resolveServerEnv(opts.config.mcp_servers);
+    connections = await connectMcpServers(resolvedServers, { signal: opts.signal });
+    ownedConnections = true;
+  }
+
+  // Gather all available tools from connected MCP servers.
+  const allTools = connections.flatMap((c) => c.tools);
+
+  // Generate a session ID.
+  const sessionId = crypto.randomUUID();
+  yield { type: 'session-init', sessionId };
+
+  // Build conversation messages.
+  const messages: Message[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: opts.prompt },
+  ];
+
   const tracker = new SourceTracker([]);
-
-  // Disable all built-in Claude Code tools (Task, Bash, Read, Edit, Write,
-  // Grep, etc.) by passing `tools: []`. This is the SDK's documented way to
-  // restrict the base toolset — `allowedTools` is auto-allow, NOT a restrictor
-  // (per the SDK's own d.ts: "To restrict which tools are available, use the
-  // `tools` option instead"). Dropping `allowedTools` eliminates ~3 spurious
-  // `Task`/`Agent` calls per query that the model used to attempt before
-  // falling back to MCP search tools (issue #5).
-  //
-  // MCP tools remain available because they come through `mcpServers`, not
-  // through the base toolset that `tools` controls.
-
-  // Call SDK (or injected fake).
-  const queryFn = opts.queryFn ?? realQuery;
-  const stream = queryFn({
-    prompt: opts.prompt,
-    options: {
-      systemPrompt,
-      mcpServers,
-      cwd: opts.scryConfigDir,
-      resume: opts.resume,
-      abortController,
-      // Headless: no UI to approve permission prompts. The user has
-      // already authorized these MCPs by configuring them in scry.config.yaml.
-      // Combined with `tools: []`, the bypass is bounded to exactly the MCP
-      // tools wired in via `mcpServers`.
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      tools: [],
-    },
-  });
-
-  let sessionId = '';
   let finalAnswer = '';
 
   try {
-    for await (const msg of stream as AsyncIterable<unknown>) {
-      const m = msg as Record<string, unknown>;
+    for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+      // Call LLM.
+      const assistantBlocks: Array<{ type: 'text'; text: string } | ToolUseBlock> = [];
+      let turnText = '';
+      const pendingToolCalls: ToolUseBlock[] = [];
+      let stopReason: 'end_turn' | 'tool_use' | 'max_tokens' = 'end_turn';
 
-      if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string') {
-        sessionId = m.session_id;
-        yield { type: 'session-init', sessionId };
-        continue;
-      }
+      const stream = provider.chat(messages, allTools, {
+        baseUrl: opts.config.llm.base_url,
+        apiKey,
+        model: opts.config.llm.model,
+        signal: opts.signal,
+      });
 
-      if (m.type === 'assistant') {
-        const content = ((m.message as { content?: unknown[] })?.content) ?? [];
-        for (const block of content as Array<Record<string, unknown>>) {
-          if (block.type === 'text' && typeof block.text === 'string') {
-            finalAnswer = (finalAnswer ? finalAnswer + '\n' : '') + block.text;
-            yield { type: 'assistant-text', text: block.text };
-          } else if (block.type === 'tool_use' && typeof block.id === 'string') {
-            const toolName = (block.name as string) ?? 'unknown';
-            const server = serverForTool(toolName, opts.config.search_tools);
-            toolUseMap.set(block.id, { tool: toolName, server });
-            yield { type: 'tool-call', tool: toolName, args: block.input ?? {} };
-          }
+      for await (const event of stream) {
+        if (opts.signal?.aborted) break;
+
+        switch (event.type) {
+          case 'text_delta':
+            turnText += event.text;
+            yield { type: 'assistant-text', text: event.text };
+            break;
+          case 'tool_use_start':
+            yield { type: 'tool-call', tool: event.name, args: {} };
+            break;
+          case 'tool_use_end':
+            pendingToolCalls.push({
+              type: 'tool_use',
+              id: event.id,
+              name: event.name,
+              input: event.input,
+            });
+            break;
+          case 'done':
+            stopReason = event.stopReason;
+            break;
         }
-        continue;
       }
 
-      if (m.type === 'user') {
-        const content = ((m.message as { content?: unknown[] })?.content) ?? [];
-        for (const block of content as Array<Record<string, unknown>>) {
-          if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
-            const meta = toolUseMap.get(block.tool_use_id) ?? { tool: 'unknown', server: 'unknown' };
-            const card = parseToolResult(block, meta, tracker);
-            if (card) {
-              yield { type: 'tool-result', tool: card.tool, sourceIndex: card.index, source: card };
-            }
-          }
+      if (opts.signal?.aborted) break;
+
+      // Build assistant message from this turn.
+      if (turnText) {
+        assistantBlocks.push({ type: 'text', text: turnText });
+        finalAnswer += (finalAnswer ? '\n' : '') + turnText;
+      }
+      for (const tc of pendingToolCalls) {
+        assistantBlocks.push(tc);
+      }
+      messages.push({ role: 'assistant', content: assistantBlocks });
+
+      // If no tool calls, we're done.
+      if (stopReason !== 'tool_use' || pendingToolCalls.length === 0) {
+        break;
+      }
+
+      // Execute tool calls and feed results back.
+      for (const tc of pendingToolCalls) {
+        const result = await callTool(connections, tc.name, tc.input);
+        messages.push({ role: 'tool', toolUseId: tc.id, content: result });
+
+        // Track source card.
+        const serverName = tc.name.split('__')[0];
+        const card = parseToolResultForCard(result, serverName, tc.name, tracker);
+        if (card) {
+          yield { type: 'tool-result', tool: tc.name, sourceIndex: card.index, source: card };
         }
-        continue;
       }
-
-      if (m.type === 'result') {
-        const sid = typeof m.session_id === 'string' ? m.session_id : sessionId;
-        yield* finalize(sid);
-        return;
-      }
-      // Any other message type: ignore.
     }
-    // Stream ended without `result`.
-    yield* finalize(sessionId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     yield { type: 'error', message };
+  } finally {
+    if (ownedConnections) {
+      await disconnectAll(connections);
+    }
   }
 
-  function* finalize(sid: string): Generator<RunQueryEvent> {
-    const parsed = parseSources(finalAnswer);
-    if (parsed.length > 0) {
-      // Replace the in-memory tracker list with canonical sources from Claude's enumeration.
-      // The parsed list is what the GUI uses; the streaming arrival-order list was only for
-      // progress UI and is now superseded.
-      yield { type: 'sources-finalized', sources: parsed };
-      yield { type: 'done', sessionId: sid, sources: parsed, finalAnswer };
-    } else {
-      // No parseable enumeration — fall back to streaming arrival-order list.
-      yield { type: 'done', sessionId: sid, sources: tracker.sources, finalAnswer };
-    }
+  // Finalize sources.
+  const parsed = parseSources(finalAnswer);
+  if (parsed.length > 0) {
+    yield { type: 'sources-finalized', sources: parsed };
+    yield { type: 'done', sessionId, sources: parsed, finalAnswer };
+  } else {
+    yield { type: 'done', sessionId, sources: tracker.sources, finalAnswer };
   }
 }
 
 // --- helpers ---
 
-function buildMcpServers(
+function resolveServerEnv(
   servers: Record<string, McpServerConfig>,
-): Record<string, { command: string; args?: string[]; env?: Record<string, string> }> {
-  const out: Record<string, { command: string; args?: string[]; env?: Record<string, string> }> = {};
+): Record<string, McpServerConfig> {
+  const out: Record<string, McpServerConfig> = {};
   for (const [name, cfg] of Object.entries(servers)) {
     if (cfg.enabled === false) continue;
-    out[name] = {
-      command: cfg.command,
-      args: cfg.args,
-      env: cfg.env as Record<string, string> | undefined,
-    };
+    const resolvedEnv: Record<string, string> = {};
+    if (cfg.env) {
+      for (const [k, v] of Object.entries(cfg.env)) {
+        const ref = parseEnvRef(v);
+        resolvedEnv[k] = ref ? (process.env[ref] ?? '') : v;
+      }
+    }
+    out[name] = { ...cfg, env: resolvedEnv };
   }
   return out;
 }
 
-function serverForTool(
+function parseToolResultForCard(
+  raw: string,
+  serverName: string,
   toolName: string,
-  searchTools: Record<string, Array<{ tool: string }>>,
-): string {
-  for (const [server, tools] of Object.entries(searchTools)) {
-    if (tools.some((t) => t.tool === toolName)) return server;
-  }
-  return 'unknown';
-}
-
-function parseToolResult(
-  block: Record<string, unknown>,
-  meta: { tool: string; server: string },
   tracker: SourceTracker,
 ): SourceCard | null {
-  const raw = block.content;
   let payload: { title?: string; snippet?: string; author?: string; timestamp?: string; url?: string } = {};
-
-  // Normalize array-form content. MCP servers commonly return
-  // Array<{ type: 'text', text: string }>. Most servers send a single
-  // text block per tool_result; we take the first block to avoid
-  // joining multiple JSON-formatted blocks into invalid JSON. When
-  // multiple blocks exist, only the first is used — that's a known
-  // limitation; downstream consumers should paginate via tool args
-  // rather than expecting multi-block parsing here.
-  let asString: string | null = null;
-  if (typeof raw === 'string') {
-    asString = raw;
-  } else if (Array.isArray(raw)) {
-    const firstText = raw.find(
-      (b): b is { type: string; text: string } =>
-        b !== null &&
-        typeof b === 'object' &&
-        (b as Record<string, unknown>).type === 'text' &&
-        typeof (b as Record<string, unknown>).text === 'string',
-    );
-    asString = firstText ? firstText.text : null;
+  try {
+    const parsed = JSON.parse(raw);
+    const first = Array.isArray(parsed) ? parsed[0] : parsed;
+    payload = first ?? {};
+  } catch {
+    payload = { title: 'tool result', snippet: raw.slice(0, 200) };
   }
 
-  if (asString !== null) {
-    try {
-      const parsed = JSON.parse(asString);
-      const first = Array.isArray(parsed) ? parsed[0] : parsed;
-      payload = first ?? {};
-    } catch {
-      payload = { title: 'tool result', snippet: asString.slice(0, 200) };
-    }
-  }
-
-  return tracker.recordToolResult(meta.server, meta.tool, {
+  return tracker.recordToolResult(serverName, toolName, {
     title: payload.title ?? 'untitled',
     snippet: payload.snippet ?? '',
     url: payload.url,

@@ -24,9 +24,9 @@ export interface Citation {
 export interface RunQueryOptions {
   prompt: string;
   config: ScryConfig;
-  scryConfigDir: string;       // absolute path; passed as Options.cwd to the SDK
+  scryConfigDir: string;       // absolute path; used for MCP server cwd
   signal?: AbortSignal;
-  resume?: string;             // SDK session_id from a prior turn
+  resume?: string;             // session ID from a prior turn (for multi-turn)
   fanoutMode?: boolean;        // adds a system-prompt directive
 }
 

@@ -95,9 +95,9 @@ export function LlmForm({ initialValues, detectedRefs = [], onSaved, submitLabel
           className="bg-bg-elevated px-3 py-2 rounded text-sm"
         >
           <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai" disabled>OpenAI (coming soon)</option>
-          <option value="gemini" disabled>Google Gemini (coming soon)</option>
-          <option value="ollama" disabled>Ollama (coming soon)</option>
+          <option value="openai">OpenAI (GPT)</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="ollama">Ollama (local)</option>
         </select>
       </label>
 
