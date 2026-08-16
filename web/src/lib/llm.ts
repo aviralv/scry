@@ -1,16 +1,23 @@
-import type { LlmConfig } from '@shared/types.js';
+import type { LlmConfig, LlmProvider } from '@shared/types.js';
 import { apiJson } from './api.js';
 
-// LlmConfigInput was a separate name for the same shape as LlmConfig — the
-// server now exports LlmConfig from `@shared/types`. Keep an alias so any
-// existing import sites continue to compile, but new code should import
-// `LlmConfig` directly.
-export type LlmConfigInput = LlmConfig;
-export type { LlmConfig };
+export type { LlmConfig, LlmProvider };
+
+export interface LlmState {
+  provider: LlmProvider;
+  base_url: string;
+  model: string;
+  auth_token: string | null;
+  hasAuth: boolean;
+}
 
 export interface LlmTestResult {
   ok: boolean;
   error?: string;
+}
+
+export async function getLlm(): Promise<{ llm: LlmState | null }> {
+  return apiJson('/api/llm');
 }
 
 export async function putLlm(input: LlmConfig): Promise<{ llm: { base_url: string; model: string } }> {

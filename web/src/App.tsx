@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LibrarySidebar } from './components/LibrarySidebar.js';
 import { RequireOnboarding } from './components/RequireOnboarding.js';
 import { Search } from './routes/Search.js';
+import { Settings } from './routes/Settings.js';
+import { SettingsLlm } from './routes/SettingsLlm.js';
 import { McpManager } from './routes/McpManager.js';
 import { Registry } from './routes/Registry.js';
 import { Onboarding } from './routes/Onboarding.js';
@@ -39,8 +41,15 @@ export default function App() {
                 </RequireOnboarding>
               }
             />
-            <Route path="/mcps" element={<RequireOnboarding><McpManager /></RequireOnboarding>} />
-            <Route path="/registry" element={<RequireOnboarding><Registry /></RequireOnboarding>} />
+            <Route path="/settings" element={<RequireOnboarding><Settings /></RequireOnboarding>}>
+              <Route index element={<Navigate to="/settings/llm" replace />} />
+              <Route path="llm" element={<SettingsLlm />} />
+              <Route path="mcps" element={<McpManager />} />
+              <Route path="registry" element={<Registry />} />
+            </Route>
+            {/* Legacy routes redirect to settings */}
+            <Route path="/mcps" element={<Navigate to="/settings/mcps" replace />} />
+            <Route path="/registry" element={<Navigate to="/settings/registry" replace />} />
             <Route path="/onboarding" element={<Onboarding />} />
           </Routes>
         </main>

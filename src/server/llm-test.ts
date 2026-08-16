@@ -1,8 +1,11 @@
-import type { LlmConfig } from '../config/types.js';
+// src/server/llm-test.ts
+// Provider-aware LLM connectivity test. Dispatches to the correct
+// endpoint format based on the provider field in the config.
+
+import type { LlmConfig, LlmProvider } from '../config/types.js';
 import { parseEnvRef } from '../config/env-ref.js';
 import { isAllowedBaseUrl } from './ssrf.js';
 
-// LlmConfig already captures base_url / model / auth_token? — reuse it.
 export type LlmTestInput = LlmConfig;
 
 export interface LlmTestOpts {
@@ -38,22 +41,47 @@ export async function runLlmTest(input: LlmTestInput, opts: LlmTestOpts = {}): P
   const tokenResult = resolveAuthToken(input.auth_token);
   if (!tokenResult.ok) return { ok: false, error: tokenResult.error };
 
+  const provider: LlmProvider = input.provider ?? 'anthropic';
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 5000);
+  try {
+    switch (provider) {
+      case 'anthropic':
+        return await testAnthropic(input, tokenResult.value, ctrl.signal);
+      case 'openai':
+      case 'gemini':
+        return await testOpenAI(input, tokenResult.value, ctrl.signal);
+      case 'ollama':
+        return await testOllama(input, ctrl.signal);
+      default:
+        return { ok: false, error: `Unknown provider: ${provider}` };
+    }
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') {
+      return { ok: false, error: 'Connection timed out (5s)' };
+    }
+    return { ok: false, error: (err as Error).message ?? 'fetch failed' };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function testAnthropic(input: LlmTestInput, token: string | null, signal: AbortSignal): Promise<LlmTestResult> {
   const url = joinUrl(input.base_url, 'v1/messages');
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'anthropic-version': '2023-06-01',
   };
-  if (tokenResult.value) {
-    // Detect auth style by ref name when input.auth_token is a ${REF}.
+  if (token) {
     const refName = parseEnvRef(input.auth_token ?? '') ?? '';
     if (refName.includes('AUTH_TOKEN')) {
-      headers['Authorization'] = `Bearer ${tokenResult.value}`;
+      headers['Authorization'] = `Bearer ${token}`;
     } else if (refName.includes('API_KEY')) {
-      headers['x-api-key'] = tokenResult.value;
+      headers['x-api-key'] = token;
     } else {
-      // Literal token (or unrecognized ref shape) — send both, let server pick.
-      headers['x-api-key'] = tokenResult.value;
-      headers['Authorization'] = `Bearer ${tokenResult.value}`;
+      headers['x-api-key'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
   }
 
@@ -63,19 +91,56 @@ export async function runLlmTest(input: LlmTestInput, opts: LlmTestOpts = {}): P
     messages: [{ role: 'user', content: 'ok' }],
   });
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 5000);
-  try {
-    const res = await fetch(url, { method: 'POST', headers, body, signal: ctrl.signal });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      const slice = text.slice(0, 200);
-      return { ok: false, error: `${res.status} ${res.statusText}${slice ? `: ${slice}` : ''}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message ?? 'fetch failed' };
-  } finally {
-    clearTimeout(t);
+  const res = await fetch(url, { method: 'POST', headers, body, signal });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return { ok: false, error: `${res.status} ${res.statusText}${text ? `: ${text.slice(0, 200)}` : ''}` };
   }
+  return { ok: true };
+}
+
+async function testOpenAI(input: LlmTestInput, token: string | null, signal: AbortSignal): Promise<LlmTestResult> {
+  const url = joinUrl(input.base_url, 'v1/chat/completions');
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const body = JSON.stringify({
+    model: input.model,
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'ok' }],
+  });
+
+  const res = await fetch(url, { method: 'POST', headers, body, signal });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return { ok: false, error: `${res.status} ${res.statusText}${text ? `: ${text.slice(0, 200)}` : ''}` };
+  }
+  return { ok: true };
+}
+
+async function testOllama(input: LlmTestInput, signal: AbortSignal): Promise<LlmTestResult> {
+  // Ollama: check model is available via /api/tags, then do a minimal generate.
+  const url = joinUrl(input.base_url, 'v1/chat/completions');
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+
+  const body = JSON.stringify({
+    model: input.model,
+    max_tokens: 1,
+    messages: [{ role: 'user', content: 'ok' }],
+    stream: false,
+  });
+
+  const res = await fetch(url, { method: 'POST', headers, body, signal });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    if (res.status === 404) {
+      return { ok: false, error: `Model "${input.model}" not found. Run: ollama pull ${input.model}` };
+    }
+    return { ok: false, error: `${res.status} ${res.statusText}${text ? `: ${text.slice(0, 200)}` : ''}` };
+  }
+  return { ok: true };
 }

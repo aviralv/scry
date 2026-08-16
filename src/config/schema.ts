@@ -45,7 +45,10 @@ export const McpServersMapSchema = z.record(z.string().regex(SLUG_RE), McpServer
 
 const URL_RE = /^https?:\/\/.+/;
 
+export const LlmProviderSchema = z.enum(['anthropic', 'openai', 'gemini', 'ollama']);
+
 export const LlmConfigSchema = z.object({
+  provider: LlmProviderSchema.optional(),
   base_url: z.string().regex(URL_RE),
   auth_token: z.string().regex(ENV_VALUE_RE).optional(),
   model: z.string().min(1),

@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { parse } from 'yaml';
 import { LlmConfigSchema } from '../../config/schema.js';
 import { writeConfigDoc } from '../../config/write-config.js';
-import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js';
+import { writeDotEnv, removeDotEnvKeys, DotEnvValidationError } from '../../config/dotenv-write.js';
 import { isEnvRef } from '../../config/env-ref.js';
 import { isAllowedBaseUrl } from '../ssrf.js';
 import { runLlmTest as realRunLlmTest, type LlmTestInput, type LlmTestResult } from '../llm-test.js';
@@ -18,6 +19,29 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
   const llmTest = deps.llmTest ?? realRunLlmTest;
 
   return new Hono()
+    .get('/', (c) => {
+      const cfgPath = deps.configPath;
+      if (!existsSync(cfgPath)) return c.json({ error: 'config-required' }, 412);
+
+      const raw = readFileSync(cfgPath, 'utf-8');
+      const json = parse(raw) ?? {};
+      const llmRaw = json.llm;
+
+      if (!llmRaw || !llmRaw.base_url || !llmRaw.model) {
+        return c.json({ llm: null });
+      }
+
+      return c.json({
+        llm: {
+          provider: llmRaw.provider ?? 'anthropic',
+          base_url: llmRaw.base_url,
+          model: llmRaw.model,
+          auth_token: llmRaw.auth_token ?? null,
+          hasAuth: typeof llmRaw.auth_token === 'string' && llmRaw.auth_token.length > 0,
+        },
+      });
+    })
+
     .post('/test', async (c) => {
       let raw: unknown;
       try { raw = await c.req.json(); } catch { return c.json({ error: 'invalid-body', message: 'malformed JSON' }, 400); }
@@ -53,6 +77,9 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
         base_url: parsed.data.base_url,
         model: parsed.data.model,
       };
+      if (parsed.data.provider) {
+        llmBlock.provider = parsed.data.provider;
+      }
       const envKv: Record<string, string> = {};
       if (parsed.data.auth_token !== undefined) {
         if (isEnvRef(parsed.data.auth_token)) {
@@ -66,11 +93,15 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
       try {
         // Write env first if needed (validates synchronously before any I/O via writeDotEnv).
         if (Object.keys(envKv).length > 0) {
-          // Env first, config second. The two-phase write has a partial-write
-          // trade-off: if the config write fails after the env write,
-          // .scry.env has a dangling SCRY_LLM_TOKEN. Self-healing on retry
-          // (env write is idempotent for the same key).
           await writeDotEnv(deps.envPath, envKv);
+        } else if (parsed.data.auth_token === undefined || isEnvRef(parsed.data.auth_token ?? '')) {
+          // No literal token being written. If config previously used SCRY_LLM_TOKEN
+          // and the new config doesn't, clean up the stale key from .scry.env.
+          // This handles the proxy switchover case (issue #16).
+          const refName = parsed.data.auth_token ? undefined : 'SCRY_LLM_TOKEN';
+          if (refName) {
+            await removeDotEnvKeys(deps.envPath, [refName]);
+          }
         }
 
         await writeConfigDoc(cfgPath, (doc) => {

@@ -1,4 +1,7 @@
+export type LlmProvider = 'anthropic' | 'openai' | 'gemini' | 'ollama';
+
 export interface LlmConfig {
+  provider?: LlmProvider;
   base_url: string;
   auth_token?: string;
   model: string;

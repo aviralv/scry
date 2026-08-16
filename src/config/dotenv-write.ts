@@ -104,3 +104,35 @@ export async function writeDotEnv(path: string, kv: Record<string, string>): Pro
     await release();
   }
 }
+
+/**
+ * Remove one or more keys from a .scry.env file. Used to clean up stale
+ * secrets (e.g., SCRY_LLM_TOKEN after switching to a proxy that needs no auth).
+ * No-op if the file doesn't exist or the key isn't present.
+ */
+export async function removeDotEnvKeys(path: string, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  if (!existsSync(path)) return;
+
+  const release = await lockfile.lock(path, {
+    stale: 10_000,
+    retries: { retries: 5, minTimeout: 50 },
+    onCompromised: (err: Error) => {
+      console.error(`[removeDotEnvKeys] lock compromised on ${path}: ${err.message}`);
+    },
+  });
+  try {
+    const raw = await fs.readFile(path, 'utf-8');
+    const lines = parseLines(raw);
+    const keysToRemove = new Set(keys);
+    const filtered = lines.filter((l) => !(l.kind === 'kv' && l.key !== undefined && keysToRemove.has(l.key)));
+
+    // If all remaining lines are blank/comments and the file becomes effectively empty,
+    // write empty string. Otherwise serialize normally.
+    const hasContent = filtered.some((l) => l.kind === 'kv');
+    const out = hasContent ? serialize(filtered) : '';
+    await atomicWriteConfig(path, out);
+  } finally {
+    await release();
+  }
+}

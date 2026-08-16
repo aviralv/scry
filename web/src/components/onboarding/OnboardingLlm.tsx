@@ -1,6 +1,6 @@
 import { useState, type JSX, type FormEvent } from 'react';
 import type { OnboardingLlm as OnboardingLlmState } from '../../lib/onboarding.js';
-import { putLlm, testLlm } from '../../lib/llm.js';
+import { testLlm, putLlm } from '../../lib/llm.js';
 import { skipStep } from '../../lib/onboarding.js';
 
 interface Props {

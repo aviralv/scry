@@ -9,6 +9,7 @@ import { mockRunQuery } from '../../engine/mock-runQuery.js';
 import type { RunQueryEvent } from '../../engine/types.js';
 import type { SessionsStore } from '../../storage/sessions.js';
 import type { StoredTurn } from '../../storage/types.js';
+import { log } from '../logger.js';
 
 const BodySchema = z.object({
   query: z.string().min(1),
@@ -33,14 +34,14 @@ function shouldUseMock(): boolean {
   const safe = process.env.NODE_ENV !== 'production';
   if (enabled && safe && !mockWarningEmitted) {
     mockWarningEmitted = true;
-    console.warn(
-      'scry: SCRY_SEARCH_MOCK=1 active — search route returns canned results, NOT a real engine call. Unset to use the real engine.',
+    log.warn(
+      'SCRY_SEARCH_MOCK=1 active — search route returns canned results, NOT a real engine call. Unset to use the real engine.',
     );
   }
   if (enabled && !safe && !mockWarningEmitted) {
     mockWarningEmitted = true;
-    console.warn(
-      'scry: SCRY_SEARCH_MOCK=1 set but NODE_ENV=production — ignoring mock flag (real engine will be used).',
+    log.warn(
+      'SCRY_SEARCH_MOCK=1 set but NODE_ENV=production — ignoring mock flag (real engine will be used).',
     );
   }
   return enabled && safe;
