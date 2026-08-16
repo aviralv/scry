@@ -129,9 +129,14 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
         break;
       }
 
-      // Execute tool calls and feed results back.
-      for (const tc of pendingToolCalls) {
-        const result = await callTool(connections, tc.name, tc.input);
+      // Execute tool calls in parallel and feed results back.
+      const toolResults = await Promise.all(
+        pendingToolCalls.map(async (tc) => {
+          const result = await callTool(connections, tc.name, tc.input);
+          return { tc, result };
+        }),
+      );
+      for (const { tc, result } of toolResults) {
         messages.push({ role: 'tool', toolUseId: tc.id, content: result });
 
         // Track source card.
@@ -143,8 +148,13 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
       }
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    yield { type: 'error', message };
+    // AbortError = user cancelled — silent stop, not an error event.
+    if (err instanceof Error && (err.name === 'AbortError' || opts.signal?.aborted)) {
+      // Don't yield error — the caller already knows they aborted.
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      yield { type: 'error', message };
+    }
   } finally {
     if (ownedConnections) {
       await disconnectAll(connections);

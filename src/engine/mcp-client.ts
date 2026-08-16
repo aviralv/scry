@@ -42,12 +42,19 @@ export async function connectMcpServers(
       await client.connect(transport);
 
       // List available tools from this server.
-      const toolsResult = await client.listTools();
-      const tools: ToolDef[] = (toolsResult.tools ?? []).map((t) => ({
-        name: `${name}__${t.name}`,
-        description: t.description ?? '',
-        inputSchema: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
-      }));
+      let tools: ToolDef[];
+      try {
+        const toolsResult = await client.listTools();
+        tools = (toolsResult.tools ?? []).map((t) => ({
+          name: `${name}__${t.name}`,
+          description: t.description ?? '',
+          inputSchema: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+        }));
+      } catch (listErr) {
+        // listTools failed after connect — close to avoid orphaned subprocess.
+        try { await client.close(); } catch { /* best effort */ }
+        throw listErr;
+      }
 
       connections.push({ name, client, transport, tools });
     } catch (err) {
