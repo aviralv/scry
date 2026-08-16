@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import { parse } from 'yaml';
 import { LlmConfigSchema } from '../../config/schema.js';
 import { writeConfigDoc } from '../../config/write-config.js';
-import { writeDotEnv, DotEnvValidationError } from '../../config/dotenv-write.js';
+import { writeDotEnv, removeDotEnvKeys, DotEnvValidationError } from '../../config/dotenv-write.js';
 import { isEnvRef } from '../../config/env-ref.js';
 import { isAllowedBaseUrl } from '../ssrf.js';
 import { runLlmTest as realRunLlmTest, type LlmTestInput, type LlmTestResult } from '../llm-test.js';
@@ -93,11 +93,15 @@ export function buildLlmRoute(deps: RouteDeps): Hono {
       try {
         // Write env first if needed (validates synchronously before any I/O via writeDotEnv).
         if (Object.keys(envKv).length > 0) {
-          // Env first, config second. The two-phase write has a partial-write
-          // trade-off: if the config write fails after the env write,
-          // .scry.env has a dangling SCRY_LLM_TOKEN. Self-healing on retry
-          // (env write is idempotent for the same key).
           await writeDotEnv(deps.envPath, envKv);
+        } else if (parsed.data.auth_token === undefined || isEnvRef(parsed.data.auth_token ?? '')) {
+          // No literal token being written. If config previously used SCRY_LLM_TOKEN
+          // and the new config doesn't, clean up the stale key from .scry.env.
+          // This handles the proxy switchover case (issue #16).
+          const refName = parsed.data.auth_token ? undefined : 'SCRY_LLM_TOKEN';
+          if (refName) {
+            await removeDotEnvKeys(deps.envPath, [refName]);
+          }
         }
 
         await writeConfigDoc(cfgPath, (doc) => {

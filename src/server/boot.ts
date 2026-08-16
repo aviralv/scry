@@ -8,6 +8,7 @@ import { resolveConfigPath } from '../config/loader.js';
 import { loadDotEnvFile } from '../config/dotenv.js';
 import { SessionsStore } from '../storage/sessions.js';
 import { runOnboardingAutocomplete } from './migrations/onboarding-autocomplete.js';
+import { log } from './logger.js';
 
 export interface BootOptions {
   port: number;
@@ -24,7 +25,7 @@ export async function startServer(opts: BootOptions): Promise<Server> {
   // Log the resolved config path so a stale cwd-precedence config doesn't
   // silently shadow the XDG config without anyone noticing. Caught in the
   // wild during Plan E smoke; logging closes the surprise window.
-  console.log(`scry: config = ${configPath}`);
+  log.info(`config = ${configPath}`);
 
   // Bootstrap an empty config for brand-new users so wizard endpoints
   // (which require existsSync(configPath)) don't 412-loop. The skeleton
@@ -34,7 +35,7 @@ export async function startServer(opts: BootOptions): Promise<Server> {
   // e.g. `scry search`. The wizard's GET /api/onboarding already treats
   // llm: {} the same as absent (both yield llm: null in the response).
   if (!existsSync(configPath)) {
-    console.log(`scry: creating empty config at ${configPath}`);
+    log.info(`creating empty config at ${configPath}`);
     // Ensure the parent directory exists. With a fresh XDG_CONFIG_HOME
     // (or first-ever scry boot on a clean machine), `~/.config/scry/`
     // doesn't exist yet — writeFileSync would ENOENT without this.
@@ -54,7 +55,7 @@ export async function startServer(opts: BootOptions): Promise<Server> {
         code === 'EROFS' ? 'read-only filesystem' :
         code === 'ENOENT' ? 'parent directory does not exist' :
         (err as Error).message;
-      console.error(
+      log.error(
         `scry: cannot create config at ${configPath}: ${reason}.\n` +
           `       Set XDG_CONFIG_HOME to a writable directory, or use SCRY_CONFIG to point at an existing config.`,
       );

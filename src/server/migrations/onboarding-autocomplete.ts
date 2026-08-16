@@ -1,3 +1,4 @@
+import { log } from "../logger.js";
 import { existsSync, readFileSync } from 'fs';
 import { parseDocument } from 'yaml';
 import { atomicWriteConfig } from '../../config/atomic-write.js';
@@ -45,6 +46,6 @@ export async function runOnboardingAutocomplete(configPath: string): Promise<Mig
   doc.set('onboarding', { completed: true });
   await atomicWriteConfig(configPath, String(doc));
 
-  console.error(`scry: migrated existing config — onboarding marked complete (${configPath})`);
+  log.info(`migrated existing config — onboarding marked complete (${configPath})`);
   return 'migrated';
 }
