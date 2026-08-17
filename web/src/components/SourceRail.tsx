@@ -12,7 +12,7 @@ interface Props {
 export function SourceRail({ cards, highlightedIndex, turnIndex }: Props): JSX.Element | null {
   if (cards.length === 0) return null;
   return (
-    <div className="source-rail flex gap-2 overflow-x-auto py-2 pb-3 mb-4 scroll-smooth"
+    <div className="source-rail flex gap-2 overflow-x-auto py-2 pb-3 px-1 mb-4 scroll-smooth"
       style={{ scrollbarWidth: 'thin' }}
     >
       {cards.map((c) => (

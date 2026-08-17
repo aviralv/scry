@@ -161,11 +161,21 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
     }
   }
 
-  // Finalize sources.
+  // Finalize sources. Merge parsed titles (from LLM's Sources: block)
+  // with URLs from tracker cards (from MCP tool results). The LLM gives
+  // clean titles and proper attribution; the tracker has the actual URLs
+  // from tool results (e.g., Slack permalinks). Best of both.
   const parsed = parseSources(finalAnswer);
   if (parsed.length > 0) {
-    yield { type: 'sources-finalized', sources: parsed };
-    yield { type: 'done', sessionId, sources: parsed, finalAnswer };
+    const merged = parsed.map((card) => {
+      if (card.url) return card; // Already has URL from parser
+      // Find matching tracker card by index and inherit its URL.
+      const trackerCard = tracker.sources.find((t) => t.index === card.index);
+      if (trackerCard?.url) return { ...card, url: trackerCard.url };
+      return card;
+    });
+    yield { type: 'sources-finalized', sources: merged };
+    yield { type: 'done', sessionId, sources: merged, finalAnswer };
   } else {
     yield { type: 'done', sessionId, sources: tracker.sources, finalAnswer };
   }

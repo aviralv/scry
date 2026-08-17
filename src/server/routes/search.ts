@@ -133,8 +133,12 @@ export function buildSearchRoute(store: SessionsStore): Hono {
             if (turn.cards.length === 0 && event.sources.length > 0) {
               turn.cards = event.sources;
             }
-            // Persist before forwarding the done event so client + db are coherent.
-            persistTurn(store, sessionId ?? event.sessionId, scryConfigDir, body.sessionId, turn);
+            // Persist — best effort. A closed DB shouldn't kill the client stream.
+            try {
+              persistTurn(store, sessionId ?? event.sessionId, scryConfigDir, body.sessionId, turn);
+            } catch (persistErr) {
+              log.warn(`session persist failed: ${(persistErr as Error).message}`);
+            }
             sessionId = event.sessionId;
           }
           await stream.writeSSE({ data: JSON.stringify(event) });
