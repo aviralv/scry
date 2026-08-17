@@ -66,6 +66,22 @@ function parseSourceLine(index: number, rest: string): SourceCard | null {
     return makeCard(index, source, title, url);
   }
 
+  // Try em-dash separator form: title — url (common LLM output pattern)
+  const emDash = body.match(/^(.+?)\s*[—–-]{1,3}\s*(https?:\/\/\S+)$/);
+  if (emDash) {
+    const title = emDash[1].trim();
+    const url = sanitizeUrl(emDash[2]);
+    return makeCard(index, source, title, url);
+  }
+
+  // Try bare trailing URL: title https://...
+  const trailingUrl = body.match(/^(.+?)\s+(https?:\/\/\S+)$/);
+  if (trailingUrl) {
+    const title = trailingUrl[1].trim();
+    const url = sanitizeUrl(trailingUrl[2]);
+    if (url) return makeCard(index, source, title, url);
+  }
+
   // Try title-with-trailing-(content) form — find the outermost trailing paren group.
   // Walk backward from end to find the matching open paren for the closing one.
   if (body.endsWith(')')) {
