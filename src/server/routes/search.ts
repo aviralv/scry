@@ -48,6 +48,10 @@ function shouldUseMock(): boolean {
 }
 
 export function buildSearchRoute(store: SessionsStore): Hono {
+  return buildSearchRouteWithConfig({ store, configPath: resolveConfigPath() });
+}
+
+export function buildSearchRouteWithConfig(deps: { store: SessionsStore; configPath: string }): Hono {
   return new Hono().post('/', async (c) => {
     let body: { query: string; fanoutMode?: boolean; sessionId?: string };
     try {
@@ -60,7 +64,7 @@ export function buildSearchRoute(store: SessionsStore): Hono {
       );
     }
 
-    const configPath = resolveConfigPath();
+    const configPath = deps.configPath;
     const configMissing = !existsSync(configPath);
 
     // Set proxy-friendly header before streamSSE starts the response.
@@ -135,7 +139,7 @@ export function buildSearchRoute(store: SessionsStore): Hono {
             }
             // Persist — best effort. A closed DB shouldn't kill the client stream.
             try {
-              persistTurn(store, sessionId ?? event.sessionId, scryConfigDir, body.sessionId, turn);
+              persistTurn(deps.store, sessionId ?? event.sessionId, scryConfigDir, body.sessionId, turn);
             } catch (persistErr) {
               log.warn(`session persist failed: ${(persistErr as Error).message}`);
             }

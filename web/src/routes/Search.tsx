@@ -193,7 +193,7 @@ export function Search({ activeSessionId, onSessionStarted, onSessionDone }: Pro
               turns[lastIdx] = {
                 ...last,
                 cards: last.finalized ? last.cards : event.sources,
-                finalAnswer: last.finalAnswer,
+                finalAnswer: event.finalAnswer,
                 finalized: last.finalized,
               };
               onSessionDone();

@@ -5,7 +5,7 @@ import { originAllowlist } from './middleware/origin.js';
 import { csrfRequired } from './middleware/csrf.js';
 import { healthRoute } from './routes/health.js';
 import { csrfRoute } from './routes/csrf.js';
-import { buildSearchRoute } from './routes/search.js';
+import { buildSearchRouteWithConfig } from './routes/search.js';
 import { buildSessionsRoute } from './routes/sessions.js';
 import { buildMcpsRoute } from './routes/mcps.js';
 import { buildRegistryRoute } from './routes/registry.js';
@@ -37,17 +37,13 @@ export function createServer(opts: ServerOptions) {
   // would silently take effect. We resolve once now; restart `scry serve`
   // to change the config path.
   //
-  // Caveat: the search route resolves its own config path per request
-  // (it doesn't take a `configPath` dep — `src/server/routes/search.ts`
-  // calls `resolveConfigPath()` inline) and reads via `loadConfig`, so
-  // live SCRY_CONFIG and live config-file edits still affect search.
   const configPath = resolveConfigPath();
   const envPath = join(dirname(configPath), '.scry.env');
 
   app.route('/api/health', healthRoute);
   app.route('/api/csrf', csrfRoute);
   app.route('/api/sessions', buildSessionsRoute(opts.sessionsStore));
-  app.route('/api/search', buildSearchRoute(opts.sessionsStore));
+  app.route('/api/search', buildSearchRouteWithConfig({ store: opts.sessionsStore, configPath }));
   app.route('/api/mcps', buildMcpsRoute({ configPath }));
   app.route('/api/registry', buildRegistryRoute({ configPath }));
   app.route('/api/llm', buildLlmRoute({ configPath, envPath }));

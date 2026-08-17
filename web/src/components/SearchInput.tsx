@@ -7,7 +7,7 @@ interface Props {
 
 export function SearchInput({ disabled, onSubmit }: Props): JSX.Element {
   const [query, setQuery] = useState('');
-  const [fanoutMode, setFanoutMode] = useState(false);
+  const [fanoutMode, setFanoutMode] = useState(true);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -56,7 +56,7 @@ export function SearchInput({ disabled, onSubmit }: Props): JSX.Element {
           onChange={(e) => setFanoutMode(e.target.checked)}
           disabled={disabled}
         />
-        Fanout mode (force all configured tools first turn)
+        Search all configured sources first
       </label>
     </form>
   );
