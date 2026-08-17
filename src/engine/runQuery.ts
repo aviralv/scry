@@ -3,13 +3,13 @@
 // direct LLM API calls + MCP tool execution. Supports any provider that
 // implements the Provider interface.
 
-import type { McpServerConfig, LlmProvider } from '../config/types.js';
+import type { McpServerConfig, LlmProvider, Registry, SearchToolConfig } from '../config/types.js';
 import type { RunQueryOptions, RunQueryEvent, SourceCard } from './types.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { SourceTracker } from './source-tracker.js';
 import { parseSources } from './parse-sources.js';
 import { getProvider } from './providers/index.js';
-import type { Provider, Message, ToolUseBlock, ProviderEvent } from './providers/types.js';
+import type { Provider, Message, ToolUseBlock, ProviderEvent, ToolDef } from './providers/types.js';
 import { connectMcpServers, callTool, disconnectAll, type McpConnection } from './mcp-client.js';
 import { parseEnvRef } from '../config/env-ref.js';
 
@@ -24,11 +24,13 @@ const MAX_TOOL_TURNS = 10;
 
 export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<RunQueryEvent> {
   const provider = opts.providerOverride ?? getProvider((opts.config.llm.provider as LlmProvider) ?? 'anthropic');
+  const registry = opts.config.registry ?? { people: {}, projects: {} };
+  const fanoutMode = opts.fanoutMode ?? true;
 
   // Build system prompt.
   const systemPrompt = buildSystemPrompt({
-    registry: opts.config.registry ?? { people: {}, projects: {} },
-    fanoutMode: opts.fanoutMode ?? false,
+    registry,
+    fanoutMode,
     serverNames: Object.keys(opts.config.mcp_servers),
   });
 
@@ -73,6 +75,47 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   let finalAnswer = '';
 
   try {
+    if (fanoutMode) {
+      const plannedSearches = buildConfiguredSearchCalls({
+        prompt: opts.prompt,
+        registry,
+        searchTools: opts.config.search_tools ?? {},
+        availableTools: allTools,
+      });
+
+      if (plannedSearches.length > 0) {
+        const syntheticToolUses: ToolUseBlock[] = plannedSearches.map((search) => ({
+          type: 'tool_use',
+          id: crypto.randomUUID(),
+          name: search.prefixedToolName,
+          input: search.input,
+        }));
+
+        messages.push({ role: 'assistant', content: syntheticToolUses });
+
+        for (const search of plannedSearches) {
+          yield { type: 'tool-call', tool: search.prefixedToolName, args: search.input };
+        }
+
+        const toolResults = await Promise.all(
+          syntheticToolUses.map(async (tc) => {
+            const result = await callTool(connections, tc.name, tc.input);
+            return { tc, result };
+          }),
+        );
+
+        for (const { tc, result } of toolResults) {
+          messages.push({ role: 'tool', toolUseId: tc.id, content: result });
+
+          const serverName = tc.name.split('__')[0];
+          const card = parseToolResultForCard(result, serverName, tc.name, tracker);
+          if (card) {
+            yield { type: 'tool-result', tool: tc.name, sourceIndex: card.index, source: card };
+          }
+        }
+      }
+    }
+
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
       // Call LLM.
       const assistantBlocks: Array<{ type: 'text'; text: string } | ToolUseBlock> = [];
@@ -167,13 +210,7 @@ export async function* runQuery(opts: RunQueryInternalOptions): AsyncIterable<Ru
   // from tool results (e.g., Slack permalinks). Best of both.
   const parsed = parseSources(finalAnswer);
   if (parsed.length > 0) {
-    const merged = parsed.map((card) => {
-      if (card.url) return card; // Already has URL from parser
-      // Find matching tracker card by index and inherit its URL.
-      const trackerCard = tracker.sources.find((t) => t.index === card.index);
-      if (trackerCard?.url) return { ...card, url: trackerCard.url };
-      return card;
-    });
+    const merged = mergeParsedSourcesWithTracker(parsed, tracker.sources);
     yield { type: 'sources-finalized', sources: merged };
     yield { type: 'done', sessionId, sources: merged, finalAnswer };
   } else {
@@ -201,6 +238,156 @@ function resolveServerEnv(
   return out;
 }
 
+interface ConfiguredSearchCall {
+  prefixedToolName: string;
+  input: Record<string, unknown>;
+}
+
+function buildConfiguredSearchCalls(opts: {
+  prompt: string;
+  registry: Registry;
+  searchTools: Record<string, SearchToolConfig[]>;
+  availableTools: ToolDef[];
+}): ConfiguredSearchCall[] {
+  const availableByName = new Map(opts.availableTools.map((tool) => [tool.name, tool]));
+  const calls: ConfiguredSearchCall[] = [];
+
+  for (const [serverName, tools] of Object.entries(opts.searchTools)) {
+    for (const toolConfig of tools) {
+      const prefixedToolName = `${serverName}__${toolConfig.tool}`;
+      const toolDef = availableByName.get(prefixedToolName);
+      if (!toolDef) continue;
+
+      calls.push({
+        prefixedToolName,
+        input: buildSearchInput({
+          prompt: opts.prompt,
+          registry: opts.registry,
+          serverName,
+          toolName: toolConfig.tool,
+          params: toolConfig.params ?? {},
+          inputSchema: toolDef.inputSchema,
+        }),
+      });
+    }
+  }
+
+  return calls;
+}
+
+function buildSearchInput(opts: {
+  prompt: string;
+  registry: Registry;
+  serverName: string;
+  toolName: string;
+  params: Record<string, unknown>;
+  inputSchema: Record<string, unknown>;
+}): Record<string, unknown> {
+  const input: Record<string, unknown> = { ...opts.params };
+  const properties = schemaProperties(opts.inputSchema);
+  const enrichedQuery = enrichQueryWithRegistry(opts.prompt, opts.registry, opts.serverName);
+
+  setFirstSupportedInput(input, properties, ['query', 'q', 'search', 'text'], enrichedQuery);
+
+  const routing = registryRoutingHints(opts.prompt, opts.registry);
+  if (routing.slackChannels.length > 0 && serverLooksLike(opts.serverName, opts.toolName, 'slack')) {
+    setFirstSupportedInput(input, properties, ['channels', 'channel_ids', 'slack_channels'], routing.slackChannels);
+  }
+  if (routing.jiraProjects.length > 0 && serverLooksLike(opts.serverName, opts.toolName, 'jira')) {
+    setFirstSupportedInput(input, properties, ['project', 'project_key', 'jira_project'], routing.jiraProjects[0]);
+  }
+  if (routing.confluenceCql.length > 0 && serverLooksLike(opts.serverName, opts.toolName, 'confluence')) {
+    setFirstSupportedInput(input, properties, ['cql', 'confluence_cql'], routing.confluenceCql.join(' OR '));
+  }
+
+  return input;
+}
+
+function schemaProperties(inputSchema: Record<string, unknown>): Set<string> | null {
+  const props = inputSchema.properties;
+  if (!props || typeof props !== 'object' || Array.isArray(props)) return null;
+  return new Set(Object.keys(props));
+}
+
+function setFirstSupportedInput(
+  input: Record<string, unknown>,
+  properties: Set<string> | null,
+  keys: string[],
+  value: unknown,
+): void {
+  if (value === undefined || value === null) return;
+  if (keys.some((key) => input[key] !== undefined)) return;
+
+  const key = properties
+    ? keys.find((candidate) => properties.has(candidate))
+    : keys[0];
+  if (key) input[key] = value;
+}
+
+function enrichQueryWithRegistry(prompt: string, registry: Registry, serverName: string): string {
+  const hints = registryQueryHints(prompt, registry, serverName);
+  if (hints.length === 0) return prompt;
+  return `${prompt} ${hints.join(' ')}`;
+}
+
+function registryQueryHints(prompt: string, registry: Registry, serverName: string): string[] {
+  const promptNorm = normalizeForMatch(prompt);
+  const serverNorm = normalizeForMatch(serverName);
+  const hints = new Set<string>();
+
+  for (const [key, person] of Object.entries(registry.people ?? {})) {
+    if (!entityMatches(promptNorm, [key, person.name, ...(person.aliases ?? [])])) continue;
+    if (person.identifiers.email) hints.add(person.identifiers.email);
+    if (serverNorm.includes('slack') && person.identifiers.slack_username) hints.add(person.identifiers.slack_username);
+    if (serverNorm.includes('confluence') && person.identifiers.confluence_username) hints.add(person.identifiers.confluence_username);
+  }
+
+  for (const [key, project] of Object.entries(registry.projects ?? {})) {
+    if (!entityMatches(promptNorm, [key, project.name, ...(project.aliases ?? [])])) continue;
+    for (const channel of project.routing.slack_channels ?? []) hints.add(channel);
+    if (project.routing.jira_project) hints.add(project.routing.jira_project);
+    if (project.routing.confluence_cql) hints.add(project.routing.confluence_cql);
+  }
+
+  return [...hints];
+}
+
+function registryRoutingHints(prompt: string, registry: Registry): {
+  slackChannels: string[];
+  jiraProjects: string[];
+  confluenceCql: string[];
+} {
+  const promptNorm = normalizeForMatch(prompt);
+  const slackChannels = new Set<string>();
+  const jiraProjects = new Set<string>();
+  const confluenceCql = new Set<string>();
+
+  for (const [key, project] of Object.entries(registry.projects ?? {})) {
+    if (!entityMatches(promptNorm, [key, project.name, ...(project.aliases ?? [])])) continue;
+    for (const channel of project.routing.slack_channels ?? []) slackChannels.add(channel);
+    if (project.routing.jira_project) jiraProjects.add(project.routing.jira_project);
+    if (project.routing.confluence_cql) confluenceCql.add(project.routing.confluence_cql);
+  }
+
+  return {
+    slackChannels: [...slackChannels],
+    jiraProjects: [...jiraProjects],
+    confluenceCql: [...confluenceCql],
+  };
+}
+
+function entityMatches(promptNorm: string, names: Array<string | undefined>): boolean {
+  return names.some((name) => {
+    const norm = normalizeForMatch(name);
+    return norm.length > 0 && promptNorm.includes(norm);
+  });
+}
+
+function serverLooksLike(serverName: string, toolName: string, needle: string): boolean {
+  const haystack = normalizeForMatch(`${serverName} ${toolName}`);
+  return haystack.includes(needle);
+}
+
 function parseToolResultForCard(
   raw: string,
   serverName: string,
@@ -218,39 +405,7 @@ function parseToolResultForCard(
 
   try {
     const parsed = JSON.parse(cleaned.trim());
-
-    // Handle search_results format (Slack MCP, etc.): { messages: [...] }
-    if (parsed.messages && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
-      const msg = parsed.messages[0];
-      payload = {
-        title: msg.channel_name ?? msg.subject ?? 'untitled',
-        snippet: (msg.text ?? msg.snippet ?? '').slice(0, 200),
-        url: msg.permalink ?? msg.url ?? msg.link,
-        author: msg.user ?? msg.author ?? msg.from,
-        timestamp: msg.ts_iso ?? msg.timestamp ?? msg.ts,
-      };
-    }
-    // Handle results array format: [{ title, url, ... }]
-    else if (Array.isArray(parsed) && parsed.length > 0) {
-      const first = parsed[0];
-      payload = {
-        title: first.title ?? first.name ?? 'untitled',
-        snippet: (first.snippet ?? first.text ?? first.excerpt ?? '').slice(0, 200),
-        url: first.url ?? first.permalink ?? first.link,
-        author: first.author ?? first.user ?? first.from,
-        timestamp: first.timestamp ?? first.ts_iso ?? first.date,
-      };
-    }
-    // Handle flat object: { title, url, ... }
-    else if (parsed && typeof parsed === 'object') {
-      payload = {
-        title: parsed.title ?? parsed.name ?? parsed.subject ?? 'untitled',
-        snippet: (parsed.snippet ?? parsed.text ?? parsed.excerpt ?? '').slice(0, 200),
-        url: parsed.url ?? parsed.permalink ?? parsed.link,
-        author: parsed.author ?? parsed.user ?? parsed.from,
-        timestamp: parsed.timestamp ?? parsed.ts_iso ?? parsed.date,
-      };
-    }
+    payload = payloadFromParsedResult(parsed);
   } catch {
     payload = { title: 'tool result', snippet: raw.slice(0, 200) };
   }
@@ -262,4 +417,132 @@ function parseToolResultForCard(
     author: payload.author,
     timestamp: payload.timestamp,
   });
+}
+
+function mergeParsedSourcesWithTracker(parsed: SourceCard[], tracked: SourceCard[]): SourceCard[] {
+  const usedTrackedIndexes = new Set<number>();
+
+  return parsed.map((card) => {
+    if (card.url) return card;
+
+    const match = findBestTrackerMatch(card, tracked, usedTrackedIndexes);
+    if (match?.url) {
+      usedTrackedIndexes.add(match.index);
+      return { ...card, url: match.url };
+    }
+
+    return card;
+  });
+}
+
+function findBestTrackerMatch(
+  card: SourceCard,
+  tracked: SourceCard[],
+  usedTrackedIndexes: Set<number>,
+): SourceCard | undefined {
+  let best: { card: SourceCard; score: number } | undefined;
+
+  for (const candidate of tracked) {
+    if (usedTrackedIndexes.has(candidate.index) || !candidate.url) continue;
+    const score = sourceMatchScore(card, candidate) + textMatchScore(card.title, candidate.title, candidate.snippet);
+    if (!best || score > best.score) best = { card: candidate, score };
+  }
+
+  if (best && best.score >= 35) return best.card;
+
+  const sameIndex = tracked.find((candidate) =>
+    !usedTrackedIndexes.has(candidate.index) && candidate.url && candidate.index === card.index,
+  );
+  return sameIndex;
+}
+
+function sourceMatchScore(parsed: SourceCard, tracked: SourceCard): number {
+  const parsedSource = normalizeForMatch(parsed.source);
+  const trackedSource = normalizeForMatch(tracked.source);
+  const trackedTool = normalizeForMatch(tracked.tool);
+
+  if (!parsedSource || !trackedSource) return 0;
+  if (parsedSource === trackedSource) return 50;
+  if (parsedSource.includes(trackedSource) || trackedSource.includes(parsedSource)) return 40;
+  if (trackedTool.includes(parsedSource)) return 30;
+  return 0;
+}
+
+function textMatchScore(parsedTitle: string, trackedTitle: string, trackedSnippet: string): number {
+  const parsedTokens = significantTokens(parsedTitle);
+  if (parsedTokens.length === 0) return 0;
+
+  const trackedText = significantTokens(`${trackedTitle} ${trackedSnippet}`);
+  if (trackedText.length === 0) return 0;
+
+  const trackedSet = new Set(trackedText);
+  const overlap = parsedTokens.filter((token) => trackedSet.has(token)).length;
+  return Math.round((overlap / parsedTokens.length) * 50);
+}
+
+function significantTokens(text: string): string[] {
+  const stop = new Set(['the', 'and', 'for', 'from', 'with', 'that', 'this', 'into', 'about']);
+  return normalizeForMatch(text)
+    .split(' ')
+    .filter((token) => token.length >= 3 && !stop.has(token));
+}
+
+function normalizeForMatch(value: string | undefined): string {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function payloadFromParsedResult(parsed: unknown): {
+  title?: string;
+  snippet?: string;
+  author?: string;
+  timestamp?: string;
+  url?: string;
+} {
+  const first = firstResultObject(parsed);
+  if (!first) return {};
+
+  const title = pickString(first, ['title', 'name', 'subject', 'channel_name', 'summary']) ?? 'untitled';
+  const snippet = pickString(first, ['snippet', 'text', 'excerpt', 'body', 'description', 'content', 'preview']) ?? '';
+
+  return {
+    title,
+    snippet: snippet.slice(0, 200),
+    url: pickString(first, ['url', 'permalink', 'link', 'webUrl', 'web_url', 'html_url']),
+    author: pickString(first, ['author', 'user', 'from', 'sender', 'creator', 'created_by']),
+    timestamp: pickString(first, ['timestamp', 'ts_iso', 'ts', 'date', 'created_at', 'updated_at', 'lastModifiedDateTime']),
+  };
+}
+
+function firstResultObject(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    return asRecord(value[0]);
+  }
+
+  const record = asRecord(value);
+  if (!record) return null;
+
+  for (const key of ['messages', 'results', 'items', 'emails', 'events', 'pages', 'issues', 'documents', 'data', 'value']) {
+    const nested = record[key];
+    if (Array.isArray(nested) && nested.length > 0) {
+      return asRecord(nested[0]);
+    }
+  }
+
+  return record;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === 'number') return String(value);
+  }
+  return undefined;
 }

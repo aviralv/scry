@@ -46,7 +46,7 @@ function fakeMcpConnection(name: string, tools: string[], callHandler?: (tool: s
     tools: tools.map((t) => ({
       name: `${name}__${t}`,
       description: `${t} tool`,
-      inputSchema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: { query: {} } },
     })),
   };
 }
@@ -262,8 +262,146 @@ describe('runQuery', () => {
     const systemMsg = capturedMessages.find((m) => m.role === 'system');
     expect(systemMsg).toBeDefined();
     if (systemMsg && systemMsg.role === 'system') {
-      expect(systemMsg.content).not.toContain(FANOUT_DIRECTIVE);
+      expect(systemMsg.content).toContain(FANOUT_DIRECTIVE);
     }
+  });
+
+  it('auto-calls configured search tools before synthesis by default', async () => {
+    const called: Array<{ tool: string; input: Record<string, unknown> }> = [];
+    let capturedMessages: Message[][] = [];
+    const provider: Provider = {
+      name: 'anthropic',
+      async *chat(messages: Message[]) {
+        capturedMessages.push(messages);
+        yield { type: 'text_delta', text: 'Auto search complete [1]' } as ProviderEvent;
+        yield { type: 'done', stopReason: 'end_turn' } as ProviderEvent;
+      },
+    };
+
+    const conn = fakeMcpConnection('slack', ['slack_search'], (tool, input) => {
+      called.push({ tool, input });
+      return JSON.stringify({ messages: [{ channel_name: 'team', text: 'result', permalink: 'https://slack.example.com/1' }] });
+    });
+
+    const events = await collect(
+      runQuery({
+        prompt: 'pricing decision',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        providerOverride: provider,
+        mcpConnections: [conn],
+      }),
+    );
+
+    expect(called).toEqual([{ tool: 'slack_search', input: { query: 'pricing decision' } }]);
+    expect(events.some((e) => e.type === 'tool-result')).toBe(true);
+    expect(capturedMessages[0].some((m) => m.role === 'tool')).toBe(true);
+  });
+
+  it('skips automatic search when fanoutMode is false', async () => {
+    let called = false;
+    const provider = fakeProvider([
+      { type: 'text_delta', text: 'No auto search' },
+      { type: 'done', stopReason: 'end_turn' },
+    ]);
+
+    const conn = fakeMcpConnection('slack', ['slack_search'], () => {
+      called = true;
+      return '{}';
+    });
+
+    await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        fanoutMode: false,
+        providerOverride: provider,
+        mcpConnections: [conn],
+      }),
+    );
+
+    expect(called).toBe(false);
+  });
+
+  it('enriches automatic search input from matching registry entries', async () => {
+    let capturedInput: Record<string, unknown> | undefined;
+    const provider = fakeProvider([
+      { type: 'text_delta', text: 'Done' },
+      { type: 'done', stopReason: 'end_turn' },
+    ]);
+
+    const config: ScryConfig = {
+      ...baseConfig,
+      registry: {
+        people: {
+          marcus: {
+            name: 'Marcus Chen',
+            aliases: ['marcus'],
+            identifiers: { email: 'marcus@example.com', slack_username: 'mchen' },
+          },
+        },
+        projects: {
+          pricing: {
+            name: 'Pricing Rollout',
+            aliases: ['pricing'],
+            routing: { slack_channels: ['team-pricing'], jira_project: 'PRICE' },
+          },
+        },
+      },
+    };
+
+    const conn: McpConnection = {
+      ...fakeMcpConnection('slack', [], (_tool, input) => {
+        capturedInput = input;
+        return JSON.stringify({ messages: [{ channel_name: 'team-pricing', text: 'result' }] });
+      }),
+      tools: [{
+        name: 'slack__slack_search',
+        description: 'slack search',
+        inputSchema: { type: 'object', properties: { query: {}, channels: {} } },
+      }],
+    };
+
+    await collect(
+      runQuery({
+        prompt: 'what did Marcus say about pricing?',
+        config,
+        scryConfigDir: '/tmp/scry',
+        providerOverride: provider,
+        mcpConnections: [conn],
+      }),
+    );
+
+    expect(capturedInput?.query).toContain('what did Marcus say about pricing?');
+    expect(capturedInput?.query).toContain('marcus@example.com');
+    expect(capturedInput?.query).toContain('mchen');
+    expect(capturedInput?.query).toContain('PRICE');
+    expect(capturedInput?.channels).toEqual(['team-pricing']);
+  });
+
+  it('does not auto-call configured search tools that are unavailable from MCP', async () => {
+    let called = false;
+    const provider = fakeProvider([
+      { type: 'text_delta', text: 'Done' },
+      { type: 'done', stopReason: 'end_turn' },
+    ]);
+    const conn = fakeMcpConnection('slack', ['slack_read'], () => {
+      called = true;
+      return '{}';
+    });
+
+    await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        providerOverride: provider,
+        mcpConnections: [conn],
+      }),
+    );
+
+    expect(called).toBe(false);
   });
 
   it('handles multi-turn text accumulation in finalAnswer', async () => {
@@ -327,5 +465,111 @@ Sources:
       expect(finalized.sources.length).toBeGreaterThan(0);
       expect(finalized.sources[0].source).toBe('slack');
     }
+  });
+
+  it('merges parsed sources with tracker URLs by source and title instead of index', async () => {
+    let callCount = 0;
+    const provider: Provider = {
+      name: 'anthropic',
+      async *chat() {
+        callCount++;
+        if (callCount === 1) {
+          yield { type: 'tool_use_start', id: 'slack-call', name: 'slack__slack_search' } as ProviderEvent;
+          yield { type: 'tool_use_end', id: 'slack-call', name: 'slack__slack_search', input: {} } as ProviderEvent;
+          yield { type: 'tool_use_start', id: 'conf-call', name: 'confluence-jira__confluence_search' } as ProviderEvent;
+          yield { type: 'tool_use_end', id: 'conf-call', name: 'confluence-jira__confluence_search', input: {} } as ProviderEvent;
+          yield { type: 'done', stopReason: 'tool_use' } as ProviderEvent;
+        } else {
+          yield {
+            type: 'text_delta',
+            text: `Pricing moved to EOQ [1], and Marcus confirmed rollout risk [2].
+
+Sources:
+[1] Confluence: Pricing rollout decision memo
+[2] Slack: Marcus rollout risk thread`,
+          } as ProviderEvent;
+          yield { type: 'done', stopReason: 'end_turn' } as ProviderEvent;
+        }
+      },
+    };
+
+    const slack = fakeMcpConnection('slack', ['slack_search'], () => JSON.stringify({
+      messages: [{
+        channel_name: 'team-search',
+        text: 'Marcus rollout risk thread says risk is manageable.',
+        permalink: 'https://slack.example.com/risk',
+      }],
+    }));
+    const confluence = fakeMcpConnection('confluence-jira', ['confluence_search'], () => JSON.stringify({
+      results: [{
+        title: 'Pricing rollout decision memo',
+        excerpt: 'Pricing moved to EOQ.',
+        url: 'https://confluence.example.com/pricing',
+      }],
+    }));
+
+    const config: ScryConfig = {
+      ...baseConfig,
+      mcp_servers: {
+        slack: { command: 'slack-mcp' },
+        'confluence-jira': { command: 'confluence-jira-mcp' },
+      },
+    };
+
+    const events = await collect(
+      runQuery({
+        prompt: 'q',
+        config,
+        scryConfigDir: '/tmp/scry',
+        providerOverride: provider,
+        mcpConnections: [slack, confluence],
+      }),
+    );
+
+    const done = events.find((e) => e.type === 'done') as Extract<RunQueryEvent, { type: 'done' }>;
+    expect(done.sources.map((s) => s.url)).toEqual([
+      'https://confluence.example.com/pricing',
+      'https://slack.example.com/risk',
+    ]);
+  });
+
+  it('extracts source cards from non-Slack MCP result envelopes', async () => {
+    const provider: Provider = {
+      name: 'anthropic',
+      async *chat() {
+        yield { type: 'tool_use_start', id: 't1', name: 'ms365__outlook_list_messages' } as ProviderEvent;
+        yield { type: 'tool_use_end', id: 't1', name: 'ms365__outlook_list_messages', input: {} } as ProviderEvent;
+        yield { type: 'done', stopReason: 'tool_use' } as ProviderEvent;
+      },
+    };
+
+    const conn = fakeMcpConnection('ms365', ['outlook_list_messages'], () => JSON.stringify({
+      emails: [{
+        subject: 'Budget approval',
+        preview: 'Approved for next quarter.',
+        webUrl: 'https://outlook.example.com/message/1',
+        from: 'cfo@example.com',
+        date: '2026-08-17T09:00:00Z',
+      }],
+    }));
+
+    const events = await collect(
+      runQuery({
+        prompt: 'q',
+        config: baseConfig,
+        scryConfigDir: '/tmp/scry',
+        providerOverride: provider,
+        mcpConnections: [conn],
+      }),
+    );
+
+    const toolResult = events.find((e) => e.type === 'tool-result') as Extract<RunQueryEvent, { type: 'tool-result' }>;
+    expect(toolResult.source).toMatchObject({
+      title: 'Budget approval',
+      snippet: 'Approved for next quarter.',
+      url: 'https://outlook.example.com/message/1',
+      author: 'cfo@example.com',
+      timestamp: '2026-08-17T09:00:00Z',
+    });
   });
 });
