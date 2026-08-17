@@ -16,5 +16,5 @@ search_tools:
     - tool: "slack_search"
       params: { format: "json" }
   confluence-jira:
-    - tool: "confluence_search"
+    - tool: "atlassian_search"
       params: { format: "json" }

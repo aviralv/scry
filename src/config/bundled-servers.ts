@@ -16,7 +16,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
     command: 'ms365-intent-mcp',
     githubUrl: 'https://github.com/aviralv/ms365-intent-mcp',
     description: 'Outlook email, calendar, Teams, OneDrive',
-    searchTools: [{ tool: 'outlook_list_messages', params: { format: 'json' } }],
+    searchTools: [{ tool: 'find', params: {} }],
     envVars: ['MS365_CLIENT_ID'],
   },
   {
@@ -25,7 +25,7 @@ export const BUNDLED_SERVERS: BundledServer[] = [
     command: 'confluence-jira-mcp',
     githubUrl: 'https://github.com/aviralv/confluence-jira-mcp',
     description: 'Confluence pages, Jira issues',
-    searchTools: [{ tool: 'confluence_search', params: { format: 'json' } }],
+    searchTools: [{ tool: 'atlassian_search', params: { format: 'json' } }],
     envVars: ['ATLASSIAN_URL', 'ATLASSIAN_EMAIL', 'ATLASSIAN_API_TOKEN'],
   },
 ];

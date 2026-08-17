@@ -83,7 +83,7 @@ describe('loadConfig', () => {
 
     expect(config.search_tools.slack).toHaveLength(1);
     expect(config.search_tools.slack[0].tool).toBe('slack_search');
-    expect(config.search_tools['confluence-jira'][0].tool).toBe('confluence_search');
+    expect(config.search_tools['confluence-jira'][0].tool).toBe('atlassian_search');
   });
 
   it('throws on missing config file', () => {

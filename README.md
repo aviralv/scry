@@ -78,7 +78,10 @@ search_tools:
     - tool: "slack_search"
       params: { format: "json" }
   ms365:
-    - tool: "outlook_list_messages"
+    - tool: "find"
+      params: {}
+  confluence-jira:
+    - tool: "atlassian_search"
       params: { format: "json" }
 
 registry:  # optional — enables context-aware routing

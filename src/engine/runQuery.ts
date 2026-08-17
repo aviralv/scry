@@ -287,6 +287,18 @@ function buildSearchInput(opts: {
   const properties = schemaProperties(opts.inputSchema);
   const enrichedQuery = enrichQueryWithRegistry(opts.prompt, opts.registry, opts.serverName);
 
+  if (properties?.has('payload')) {
+    input.payload = buildPayloadInput({
+      prompt: opts.prompt,
+      enrichedQuery,
+      registry: opts.registry,
+      serverName: opts.serverName,
+      toolName: opts.toolName,
+      existing: asRecord(input.payload),
+    });
+    return input;
+  }
+
   setFirstSupportedInput(input, properties, ['query', 'q', 'search', 'text'], enrichedQuery);
 
   const routing = registryRoutingHints(opts.prompt, opts.registry);
@@ -301,6 +313,49 @@ function buildSearchInput(opts: {
   }
 
   return input;
+}
+
+function buildPayloadInput(opts: {
+  prompt: string;
+  enrichedQuery: string;
+  registry: Registry;
+  serverName: string;
+  toolName: string;
+  existing: Record<string, unknown> | null;
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...(opts.existing ?? {}) };
+
+  if (serverLooksLike(opts.serverName, opts.toolName, 'atlassian')) {
+    return buildAtlassianSearchPayload(opts.prompt, opts.registry, payload);
+  }
+
+  if (payload.query === undefined) payload.query = opts.enrichedQuery;
+  return payload;
+}
+
+function buildAtlassianSearchPayload(
+  prompt: string,
+  registry: Registry,
+  existing: Record<string, unknown>,
+): Record<string, unknown> {
+  const routing = registryRoutingHints(prompt, registry);
+  const text = escapeQueryLiteral(prompt);
+  const cql = routing.confluenceCql.length > 0
+    ? `(${routing.confluenceCql.join(') OR (')}) AND text ~ "${text}"`
+    : `text ~ "${text}"`;
+  const jqlParts = [`text ~ "${text}"`];
+  if (routing.jiraProjects.length > 0) {
+    jqlParts.unshift(`project in (${routing.jiraProjects.map((p) => `"${escapeQueryLiteral(p)}"`).join(', ')})`);
+  }
+  const jql = jqlParts.join(' AND ');
+
+  return {
+    source: 'both',
+    cql,
+    jql,
+    limit_per_source: 10,
+    ...existing,
+  };
 }
 
 function schemaProperties(inputSchema: Record<string, unknown>): Set<string> | null {
@@ -386,6 +441,10 @@ function entityMatches(promptNorm: string, names: Array<string | undefined>): bo
 function serverLooksLike(serverName: string, toolName: string, needle: string): boolean {
   const haystack = normalizeForMatch(`${serverName} ${toolName}`);
   return haystack.includes(needle);
+}
+
+function escapeQueryLiteral(value: string): string {
+  return value.replace(/["\\]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseToolResultForCard(
@@ -503,16 +562,21 @@ function payloadFromParsedResult(parsed: unknown): {
 } {
   const first = firstResultObject(parsed);
   if (!first) return {};
+  const fields = asRecord(first.fields);
 
-  const title = pickString(first, ['title', 'name', 'subject', 'channel_name', 'summary']) ?? 'untitled';
-  const snippet = pickString(first, ['snippet', 'text', 'excerpt', 'body', 'description', 'content', 'preview']) ?? '';
+  const title = pickString(first, ['title', 'name', 'subject', 'channel_name', 'summary', 'key'])
+    ?? pickString(fields ?? {}, ['summary'])
+    ?? 'untitled';
+  const snippet = pickString(first, ['snippet', 'text', 'excerpt', 'body_preview', 'body', 'description', 'content', 'preview'])
+    ?? pickString(fields ?? {}, ['description', 'summary'])
+    ?? '';
 
   return {
     title,
     snippet: snippet.slice(0, 200),
-    url: pickString(first, ['url', 'permalink', 'link', 'webUrl', 'web_url', 'html_url']),
-    author: pickString(first, ['author', 'user', 'from', 'sender', 'creator', 'created_by']),
-    timestamp: pickString(first, ['timestamp', 'ts_iso', 'ts', 'date', 'created_at', 'updated_at', 'lastModifiedDateTime']),
+    url: pickString(first, ['url', 'permalink', 'link', 'webUrl', 'web_url', 'web_link', 'html_url', 'self', 'chat_url']),
+    author: pickString(first, ['author', 'user', 'from', 'sender', 'creator', 'created_by', 'displayName']),
+    timestamp: pickString(first, ['timestamp', 'ts_iso', 'ts', 'date', 'created', 'created_at', 'updated_at', 'lastModifiedDateTime']),
   };
 }
 
@@ -524,11 +588,17 @@ function firstResultObject(value: unknown): Record<string, unknown> | null {
   const record = asRecord(value);
   if (!record) return null;
 
-  for (const key of ['messages', 'results', 'items', 'emails', 'events', 'pages', 'issues', 'documents', 'data', 'value']) {
+  for (const key of ['messages', 'results', 'items', 'hits', 'emails', 'events', 'pages', 'issues', 'documents', 'data', 'value']) {
     const nested = record[key];
     if (Array.isArray(nested) && nested.length > 0) {
       return asRecord(nested[0]);
     }
+  }
+
+  for (const key of ['confluence', 'jira']) {
+    const nested = asRecord(record[key]);
+    const result = firstResultObject(nested);
+    if (result) return result;
   }
 
   return record;

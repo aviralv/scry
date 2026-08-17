@@ -15,6 +15,12 @@ describe('bundled-servers', () => {
     expect(server!.searchTools.length).toBeGreaterThan(0);
   });
 
+  it('uses current intent-tool names for bundled search tools', () => {
+    expect(findBundledServer('slack-mcp')?.searchTools[0].tool).toBe('slack_search');
+    expect(findBundledServer('ms365-intent-mcp')?.searchTools[0].tool).toBe('find');
+    expect(findBundledServer('confluence-jira-mcp')?.searchTools[0].tool).toBe('atlassian_search');
+  });
+
   it('returns undefined for unknown server', () => {
     expect(findBundledServer('unknown-mcp')).toBeUndefined();
   });

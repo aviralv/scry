@@ -380,6 +380,87 @@ describe('runQuery', () => {
     expect(capturedInput?.channels).toEqual(['team-pricing']);
   });
 
+  it('builds nested ms365 find payloads from configured search_tools', async () => {
+    let capturedInput: Record<string, unknown> | undefined;
+    const provider = fakeProvider([
+      { type: 'text_delta', text: 'Done' },
+      { type: 'done', stopReason: 'end_turn' },
+    ]);
+    const config: ScryConfig = {
+      ...baseConfig,
+      mcp_servers: { ms365: { command: 'ms365-intent-mcp' } },
+      search_tools: { ms365: [{ tool: 'find', params: {} }] },
+    };
+    const conn: McpConnection = {
+      ...fakeMcpConnection('ms365', [], (_tool, input) => {
+        capturedInput = input;
+        return JSON.stringify({ hits: [{ kind: 'email', subject: 'Budget', sender: 'cfo', body_preview: 'Approved' }] });
+      }),
+      tools: [{
+        name: 'ms365__find',
+        description: 'find',
+        inputSchema: { type: 'object', properties: { payload: {} } },
+      }],
+    };
+
+    await collect(runQuery({
+      prompt: 'budget approval',
+      config,
+      scryConfigDir: '/tmp/scry',
+      providerOverride: provider,
+      mcpConnections: [conn],
+    }));
+
+    expect(capturedInput).toEqual({ payload: { query: 'budget approval' } });
+  });
+
+  it('builds Atlassian nested payloads for confluence and jira search', async () => {
+    let capturedInput: Record<string, unknown> | undefined;
+    const provider = fakeProvider([
+      { type: 'text_delta', text: 'Done' },
+      { type: 'done', stopReason: 'end_turn' },
+    ]);
+    const config: ScryConfig = {
+      ...baseConfig,
+      mcp_servers: { 'confluence-jira': { command: 'confluence-jira-mcp' } },
+      search_tools: { 'confluence-jira': [{ tool: 'atlassian_search', params: { format: 'json' } }] },
+      registry: {
+        people: {},
+        projects: {
+          pricing: {
+            name: 'Pricing Rollout',
+            aliases: ['pricing'],
+            routing: { jira_project: 'PRICE', confluence_cql: 'space = PRICE' },
+          },
+        },
+      },
+    };
+    const conn: McpConnection = {
+      ...fakeMcpConnection('confluence-jira', [], (_tool, input) => {
+        capturedInput = input;
+        return JSON.stringify({ confluence: { results: [{ title: 'Pricing memo' }] } });
+      }),
+      tools: [{
+        name: 'confluence-jira__atlassian_search',
+        description: 'search',
+        inputSchema: { type: 'object', properties: { payload: {}, format: {} } },
+      }],
+    };
+
+    await collect(runQuery({
+      prompt: 'pricing decision',
+      config,
+      scryConfigDir: '/tmp/scry',
+      providerOverride: provider,
+      mcpConnections: [conn],
+    }));
+
+    expect(capturedInput?.format).toBe('json');
+    expect(capturedInput?.payload).toMatchObject({ source: 'both', limit_per_source: 10 });
+    expect(String((capturedInput?.payload as Record<string, unknown>).cql)).toContain('space = PRICE');
+    expect(String((capturedInput?.payload as Record<string, unknown>).jql)).toContain('PRICE');
+  });
+
   it('does not auto-call configured search tools that are unavailable from MCP', async () => {
     let called = false;
     const provider = fakeProvider([
@@ -570,6 +651,69 @@ Sources:
       url: 'https://outlook.example.com/message/1',
       author: 'cfo@example.com',
       timestamp: '2026-08-17T09:00:00Z',
+    });
+  });
+
+  it('extracts source cards from current ms365 find_results hits', async () => {
+    const provider: Provider = {
+      name: 'anthropic',
+      async *chat() {
+        yield { type: 'tool_use_start', id: 't1', name: 'ms365__find' } as ProviderEvent;
+        yield { type: 'tool_use_end', id: 't1', name: 'ms365__find', input: {} } as ProviderEvent;
+        yield { type: 'done', stopReason: 'tool_use' } as ProviderEvent;
+      },
+    };
+    const conn = fakeMcpConnection('ms365', ['find'], () => JSON.stringify({
+      type: 'find_results',
+      query: 'budget',
+      hits: [{ kind: 'email', subject: 'Budget approval', sender: 'cfo@example.com', body_preview: 'Approved.', web_link: 'https://outlook.example.com/1' }],
+      rendered_markdown: '',
+    }));
+
+    const events = await collect(runQuery({
+      prompt: 'q',
+      config: { ...baseConfig, search_tools: {} },
+      scryConfigDir: '/tmp/scry',
+      providerOverride: provider,
+      mcpConnections: [conn],
+    }));
+
+    const toolResult = events.find((e) => e.type === 'tool-result') as Extract<RunQueryEvent, { type: 'tool-result' }>;
+    expect(toolResult.source).toMatchObject({
+      title: 'Budget approval',
+      snippet: 'Approved.',
+      url: 'https://outlook.example.com/1',
+      author: 'cfo@example.com',
+    });
+  });
+
+  it('extracts source cards from Atlassian both-search JSON', async () => {
+    const provider: Provider = {
+      name: 'anthropic',
+      async *chat() {
+        yield { type: 'tool_use_start', id: 't1', name: 'confluence-jira__atlassian_search' } as ProviderEvent;
+        yield { type: 'tool_use_end', id: 't1', name: 'confluence-jira__atlassian_search', input: {} } as ProviderEvent;
+        yield { type: 'done', stopReason: 'tool_use' } as ProviderEvent;
+      },
+    };
+    const conn = fakeMcpConnection('confluence-jira', ['atlassian_search'], () => JSON.stringify({
+      confluence: { results: [{ title: 'Pricing memo', excerpt: 'Decision details', url: 'https://wiki.example.com/page' }] },
+      jira: { issues: [{ key: 'PRICE-1', self: 'https://jira.example.com/rest/issue/1', fields: { summary: 'Ship pricing' } }] },
+    }));
+
+    const events = await collect(runQuery({
+      prompt: 'q',
+      config: { ...baseConfig, search_tools: {} },
+      scryConfigDir: '/tmp/scry',
+      providerOverride: provider,
+      mcpConnections: [conn],
+    }));
+
+    const toolResult = events.find((e) => e.type === 'tool-result') as Extract<RunQueryEvent, { type: 'tool-result' }>;
+    expect(toolResult.source).toMatchObject({
+      title: 'Pricing memo',
+      snippet: 'Decision details',
+      url: 'https://wiki.example.com/page',
     });
   });
 });
