@@ -26,8 +26,8 @@ query → discover sources → parallel search → normalize → synthesize → 
 ```
 
 1. **Discover**: Detects MCP servers from your Claude config or PATH
-2. **Route**: Uses a context registry (people, projects, channels) to target the right sources
-3. **Search**: Fans out parallel queries with per-source timeouts
+2. **Route**: Uses `search_tools` plus registry hints (people, projects, channels) to target the right sources
+3. **Search**: Calls configured search tools in parallel before synthesis
 4. **Synthesize**: LLM combines results with source citations
 
 ## Supported MCP Servers
@@ -95,12 +95,12 @@ registry:  # optional — enables context-aware routing
 ```
 scry [query]              Search and synthesize
 scry init                 Interactive setup wizard
+scry serve                Start the local web UI
 scry config show          Show current configuration
 
 Options:
   -c, --config <path>     Config file (default: see resolution chain in Configuration above)
-  -t, --timeout <ms>      Per-source timeout (default: 15000)
-  --no-synthesize         Show raw results without LLM synthesis
+  --fanout                Explicitly search all configured tools first (default behavior)
 ```
 
 ## Environment Variables
