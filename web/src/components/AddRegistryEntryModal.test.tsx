@@ -54,6 +54,16 @@ describe('AddRegistryEntryModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('derives the key from the name until the key is manually edited', () => {
+    render(<AddRegistryEntryModal group="projects" existingKeys={[]} onConfirm={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Pricing Rollout 2026' } });
+    expect((screen.getByLabelText(/key/i) as HTMLInputElement).value).toBe('pricing-rollout-2026');
+
+    fireEvent.change(screen.getByLabelText(/key/i), { target: { value: 'pricing' } });
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Pricing Rollout Final' } });
+    expect((screen.getByLabelText(/key/i) as HTMLInputElement).value).toBe('pricing');
+  });
+
   it('Cancel closes without confirming', () => {
     const onConfirm = vi.fn();
     const onClose = vi.fn();

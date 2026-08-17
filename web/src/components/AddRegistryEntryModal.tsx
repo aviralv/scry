@@ -12,6 +12,7 @@ interface Props {
 export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose }: Props): JSX.Element {
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
+  const [keyEdited, setKeyEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const title = group === 'people' ? 'Add Person' : 'Add Project';
@@ -37,6 +38,11 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
     onClose();
   };
 
+  const updateName = (nextName: string) => {
+    setName(nextName);
+    if (!keyEdited) setKey(slugify(nextName));
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center" role="dialog" aria-modal="true">
       <form onSubmit={submit} className="bg-bg-secondary p-6 rounded w-[420px] flex flex-col gap-3">
@@ -46,7 +52,10 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
           Key
           <input
             value={key}
-            onChange={(e) => setKey(e.target.value)}
+            onChange={(e) => {
+              setKeyEdited(true);
+              setKey(e.target.value);
+            }}
             required
             placeholder={keyPlaceholder}
             className="bg-bg-elevated px-2 py-1 rounded font-mono"
@@ -57,7 +66,7 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
           Name
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => updateName(e.target.value)}
             required
             placeholder={namePlaceholder}
             className="bg-bg-elevated px-2 py-1 rounded"
@@ -73,4 +82,15 @@ export function AddRegistryEntryModal({ group, existingKeys, onConfirm, onClose 
       </form>
     </div>
   );
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .slice(0, 64);
 }
