@@ -100,7 +100,8 @@ async function testAnthropic(input: LlmTestInput, token: string | null, signal: 
 }
 
 async function testOpenAI(input: LlmTestInput, token: string | null, signal: AbortSignal): Promise<LlmTestResult> {
-  const url = joinUrl(input.base_url, 'v1/chat/completions');
+  const provider: LlmProvider = input.provider ?? 'openai';
+  const url = joinUrl(resolveOpenAICompatibleBaseUrl(input.base_url, provider), 'chat/completions');
   const headers: Record<string, string> = {
     'content-type': 'application/json',
   };
@@ -124,7 +125,7 @@ async function testOpenAI(input: LlmTestInput, token: string | null, signal: Abo
 
 async function testOllama(input: LlmTestInput, signal: AbortSignal): Promise<LlmTestResult> {
   // Ollama: check model is available via /api/tags, then do a minimal generate.
-  const url = joinUrl(input.base_url, 'v1/chat/completions');
+  const url = joinUrl(resolveOpenAICompatibleBaseUrl(input.base_url, 'ollama'), 'chat/completions');
   const headers: Record<string, string> = { 'content-type': 'application/json' };
 
   const body = JSON.stringify({
@@ -143,4 +144,14 @@ async function testOllama(input: LlmTestInput, signal: AbortSignal): Promise<Llm
     return { ok: false, error: `${res.status} ${res.statusText}${text ? `: ${text.slice(0, 200)}` : ''}` };
   }
   return { ok: true };
+}
+
+function resolveOpenAICompatibleBaseUrl(baseUrl: string, provider: LlmProvider): string {
+  const trimmed = baseUrl.replace(/\/$/, '');
+  if (provider === 'gemini') {
+    if (/\/v1beta\/openai$/i.test(trimmed) || /\/v1\/openai$/i.test(trimmed)) return trimmed;
+    return `${trimmed}/v1beta/openai`;
+  }
+  if (/\/v1$/i.test(trimmed)) return trimmed;
+  return `${trimmed}/v1`;
 }

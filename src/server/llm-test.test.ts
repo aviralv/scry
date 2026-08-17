@@ -128,4 +128,25 @@ describe('runLlmTest', () => {
     const [url] = fetchMock.mock.calls[0];
     expect(url).toBe('http://localhost:6655/anthropic/v1/messages');
   });
+
+  it('uses OpenAI chat completions under /v1 without duplicating the suffix', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    await runLlmTest({ provider: 'openai', base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini', auth_token: 'sk-x' });
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.openai.com/v1/chat/completions');
+  });
+
+  it('uses Gemini OpenAI-compatible /v1beta/openai path', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    await runLlmTest({ provider: 'gemini', base_url: 'https://generativelanguage.googleapis.com', model: 'gemini-2.0-flash', auth_token: 'key' });
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+  });
+
+  it('uses Ollama OpenAI-compatible /v1 path', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    await runLlmTest({ provider: 'ollama', base_url: 'http://localhost:11434', model: 'llama3.2' });
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:11434/v1/chat/completions');
+  });
 });

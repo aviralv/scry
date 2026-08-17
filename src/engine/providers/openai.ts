@@ -22,7 +22,7 @@ export class OpenAIProvider implements Provider {
   ): AsyncIterable<ProviderEvent> {
     const client = new OpenAI({
       apiKey: options.apiKey ?? 'ollama',  // Ollama doesn't need a key; 'ollama' is a placeholder
-      baseURL: options.baseUrl.replace(/\/$/, '') + '/v1',
+      baseURL: resolveOpenAICompatibleBaseUrl(options.baseUrl, this.name),
     });
 
     // Convert messages to OpenAI format.
@@ -106,6 +106,16 @@ export class OpenAIProvider implements Provider {
       }
     }
   }
+}
+
+function resolveOpenAICompatibleBaseUrl(baseUrl: string, provider: LlmProvider): string {
+  const trimmed = baseUrl.replace(/\/$/, '');
+  if (provider === 'gemini') {
+    if (/\/v1beta\/openai$/i.test(trimmed) || /\/v1\/openai$/i.test(trimmed)) return trimmed;
+    return `${trimmed}/v1beta/openai`;
+  }
+  if (/\/v1$/i.test(trimmed)) return trimmed;
+  return `${trimmed}/v1`;
 }
 
 type OpenAIMessage = OpenAI.ChatCompletionMessageParam;

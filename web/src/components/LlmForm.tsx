@@ -25,25 +25,31 @@ const PROVIDER_DEFAULTS: Record<LlmProvider, { base_url: string; model: string }
   ollama: { base_url: 'http://localhost:11434', model: 'llama3.2' },
 };
 
+const PROVIDER_ENV_REFS: Record<LlmProvider, string[]> = {
+  anthropic: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+  ollama: [],
+};
+
 export function LlmForm({ initialValues, detectedRefs = [], onSaved, submitLabel }: Props): JSX.Element {
-  const [provider, setProvider] = useState<LlmProvider>(initialValues?.provider ?? 'anthropic');
-  const [baseUrl, setBaseUrl] = useState(initialValues?.base_url ?? PROVIDER_DEFAULTS.anthropic.base_url);
-  const [model, setModel] = useState(initialValues?.model ?? PROVIDER_DEFAULTS.anthropic.model);
+  const initialProvider = initialValues?.provider ?? 'anthropic';
+  const initialDefaults = PROVIDER_DEFAULTS[initialProvider];
+  const initialBaseUrl = initialValues?.base_url ?? initialDefaults.base_url;
+  const [provider, setProvider] = useState<LlmProvider>(initialProvider);
+  const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
+  const [model, setModel] = useState(initialValues?.model ?? initialDefaults.model);
   const [authToken, setAuthToken] = useState(() => {
     if (initialValues?.auth_token) return initialValues.auth_token;
-    const hasAnthropicKey = detectedRefs.includes('ANTHROPIC_API_KEY');
-    const hasAnthropicToken = detectedRefs.includes('ANTHROPIC_AUTH_TOKEN');
-    if (hasAnthropicToken) return '${ANTHROPIC_AUTH_TOKEN}';
-    if (hasAnthropicKey) return '${ANTHROPIC_API_KEY}';
-    return '';
+    return defaultAuthRef(initialProvider, detectedRefs);
   });
-  const [noAuth, setNoAuth] = useState(false);
+  const [noAuth, setNoAuth] = useState(() => initialProvider === 'ollama' || (initialValues?.hasAuth === false && LOCALHOST_RE.test(initialBaseUrl)));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   const isLocal = LOCALHOST_RE.test(baseUrl);
-  const detectedAnthropic = detectedRefs.includes('ANTHROPIC_API_KEY') || detectedRefs.includes('ANTHROPIC_AUTH_TOKEN');
+  const authRefDetected = ENV_REF_RE.test(authToken) && detectedRefs.includes(authToken.slice(2, -1));
 
   const handleProviderChange = (newProvider: LlmProvider) => {
     setProvider(newProvider);
@@ -51,6 +57,7 @@ export function LlmForm({ initialValues, detectedRefs = [], onSaved, submitLabel
     setBaseUrl(defaults.base_url);
     setModel(defaults.model);
     setNoAuth(newProvider === 'ollama');
+    setAuthToken(defaultAuthRef(newProvider, detectedRefs));
     setError(null);
     setSuccess(false);
   };
@@ -135,10 +142,10 @@ export function LlmForm({ initialValues, detectedRefs = [], onSaved, submitLabel
             value={authToken}
             onChange={(e) => setAuthToken(e.target.value)}
             disabled={submitting}
-            placeholder="${ANTHROPIC_API_KEY} or paste a literal value"
+            placeholder={authPlaceholder(provider)}
             className="bg-bg-elevated px-3 py-2 rounded font-mono text-sm"
           />
-          {detectedAnthropic && ENV_REF_RE.test(authToken) && (
+          {authRefDetected && (
             <span className="text-text-tertiary text-xs">Detected from environment — leave as-is to use it, or paste a different value.</span>
           )}
         </label>
@@ -170,4 +177,14 @@ export function LlmForm({ initialValues, detectedRefs = [], onSaved, submitLabel
       </div>
     </form>
   );
+}
+
+function defaultAuthRef(provider: LlmProvider, detectedRefs: string[]): string {
+  const detected = PROVIDER_ENV_REFS[provider].find((ref) => detectedRefs.includes(ref));
+  return detected ? `\${${detected}}` : '';
+}
+
+function authPlaceholder(provider: LlmProvider): string {
+  const first = PROVIDER_ENV_REFS[provider][0];
+  return first ? `\${${first}} or paste a literal value` : 'No token required';
 }

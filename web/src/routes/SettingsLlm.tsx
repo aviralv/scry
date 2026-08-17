@@ -24,7 +24,7 @@ export function SettingsLlm(): JSX.Element {
     <div className="max-w-xl p-6">
       <h1 className="text-xl text-text-primary mb-1">LLM Provider</h1>
       <p className="text-text-tertiary text-sm mb-6">
-        Configure the LLM used for search synthesis. Currently supports Anthropic Claude — more providers coming soon.
+        Configure the LLM used for search synthesis. Supports Anthropic, OpenAI, Gemini, and local Ollama-compatible models.
       </p>
       <LlmForm
         initialValues={llm ? {
